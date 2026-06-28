@@ -2,4 +2,12 @@
 .DS_Store
 *.swp
 
+# Claude / Claude Code artifacts — never commit
+.claude/
+.claude.json
+.claude.local.md
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+
 # ISO build artifacts are ignored by iso/.gitignore; nothing extra needed here.
