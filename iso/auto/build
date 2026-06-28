@@ -1,3 +1,6 @@
-#!/bin/sh
-set -e
+#!/usr/bin/env bash
+# bash + pipefail so a failed `lb build` propagates instead of being masked
+# by tee's exit status (a silent failure would otherwise let build.sh move a
+# stale ISO as if the build succeeded).
+set -eo pipefail
 lb build noauto "${@}" 2>&1 | tee build.log

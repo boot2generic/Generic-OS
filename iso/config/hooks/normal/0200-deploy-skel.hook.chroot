@@ -4,9 +4,14 @@
 # the new user's home at account creation, so the install is themed out of
 # the box. Desktop must be a flag (the script resets the DESKTOP env var).
 # Internal `sudo` calls escalate via NOPASSWD (set in 0150).
+#
+# --no-gpu: in the build chroot the host's /sys is visible, so GPU
+# auto-detection would see the BUILD host's GPU, not the target's. Force it
+# off for a deterministic deploy; the NVIDIA Wayland env is baked separately
+# (config/system/etc/environment.d + the 0600 hook for the nvidia variant).
 set -e
 runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
-  /opt/dotfiles/local_setup.sh deploy --plasma
+  /opt/dotfiles/local_setup.sh deploy --plasma --no-gpu
 
 # Default shell = zsh for accounts created from skel.
 sed -i 's#^\(SHELL=\).*#\1/usr/bin/zsh#' /etc/default/useradd 2>/dev/null || true

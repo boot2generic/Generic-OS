@@ -4,4 +4,4 @@
 # --no-nix per project decision; plugin pre-warm is best-effort.
 set -e
 runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
-  /opt/dotfiles/local_setup.sh terminal --plasma --no-nix || true
+  /opt/dotfiles/local_setup.sh terminal --plasma --no-nix --no-gpu || true

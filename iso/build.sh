@@ -34,12 +34,17 @@ update_dotfiles() {
     echo "[dotfiles] using checked-out submodule (NO_UPDATE_DOTFILES=1)"
     return 0
   fi
+  # We run as root (sudo), but the git repo is owned by the invoking user.
+  # git refuses operations on another user's repo ("dubious ownership"), so
+  # run the update as that user; writes stay correctly owned too.
+  local git_as=(git)
+  [[ -n "${SUDO_USER:-}" ]] && git_as=(sudo -u "$SUDO_USER" git)
   echo "[dotfiles] pulling latest (submodule tracks main)…"
   # Bounded so a slow/hanging network can't stall the build — degrade to the
   # checked-out version on timeout (124) or failure.
-  timeout 180 git -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
+  timeout 180 "${git_as[@]}" -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
     || echo "[dotfiles] WARNING: update timed out/failed — building from checked-out version"
-  echo "[dotfiles] at $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  echo "[dotfiles] at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 }
 
 LISTS="config/package-lists"
@@ -47,7 +52,7 @@ INC="config/includes.chroot"
 GENERATED_LISTS="25-gpu-nvidia 30-dev 40-security 50-gaming"
 
 clear_generated_lists() { for l in $GENERATED_LISTS; do rm -f "$LISTS/$l.list.chroot"; done; }
-clean() { ./auto/clean || true; rm -rf "$INC/etc" "$INC/usr" "$INC/opt"; clear_generated_lists; }
+clean() { ./auto/clean || true; rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt"; clear_generated_lists; }
 
 stack_file() { case "$1" in dev) echo 30-dev;; security) echo 40-security;; gaming) echo 50-gaming;; *) return 1;; esac; }
 
@@ -100,8 +105,11 @@ build_one() {                       # $1=edition
     EDITION="$e" VARIANT="$v" ./auto/config
     ./auto/build
     mkdir -p out
-    mv -f live-image-*.iso "out/${DEBIAN_SUITE}-${e}-${v}.iso"
-    echo "=== done: out/${DEBIAN_SUITE}-${e}-${v}.iso ==="
+    local iso="out/${DEBIAN_SUITE}-${e}-${v}.iso"
+    mv -f live-image-*.iso "$iso"
+    # Built under sudo → root-owned; hand back to the invoking user.
+    [[ -n "${SUDO_USER:-}" ]] && chown "$SUDO_USER":"$(id -gn "$SUDO_USER")" "$iso" 2>/dev/null || true
+    echo "=== done: $iso ==="
   done
 }
 

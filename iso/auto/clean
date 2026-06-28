@@ -6,3 +6,4 @@ rm -f config/binary config/bootstrap config/chroot config/common config/source c
 find config/hooks/normal config/hooks/live -maxdepth 1 -type l -delete 2>/dev/null || true
 rmdir config/hooks/live 2>/dev/null || true   # remove if now empty (all generated)
 rm -f build.log
+rm -f live-image-*.iso live-image-*.img        # drop any stale output from a prior run
