@@ -5,11 +5,11 @@
 #   - protontricks→ not in Debian trixie/backports; install the real upstream
 #                   CLI via pipx, system-wide under /opt/pipx (stable absolute
 #                   path → survives the skel→home copy on the installed system).
-# Gated on the gaming stack being present (steam-installer). Best-effort: a
-# failure here warns but doesn't abort the build.
+# Gated on GAMING=1 (the gaming stack). Best-effort: a failure here warns but
+# doesn't abort the build.
 set -e
 . /etc/dotfiles-iso.env 2>/dev/null || true
-dpkg -s steam-installer >/dev/null 2>&1 || { echo "no gaming stack; skipping gaming extras"; exit 0; }
+[ "${GAMING:-0}" = 1 ] || { echo "non-gaming edition; skipping gaming extras"; exit 0; }
 
 if [ "${BACKPORTS:-0}" = 1 ]; then
   apt-get update

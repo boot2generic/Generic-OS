@@ -125,23 +125,24 @@ stage_backports() {                 # $1=BACKPORTS
   return 0
 }
 
-stage_env() {                       # $1=edition $2=app-tiers $3=kali-tools $4=backports
-  printf 'EDITION=%s\nAPPS_TIERS=%s\nKALI_TOOLS=%s\nBACKPORTS=%s\nSUITE=%s\n' \
-    "$1" "${2:-}" "${3:-0}" "${4:-0}" "$DEBIAN_SUITE" > "$INC/etc/dotfiles-iso.env"
+stage_env() {                       # $1=edition $2=app-tiers $3=kali-tools $4=backports $5=gaming
+  printf 'EDITION=%s\nAPPS_TIERS=%s\nKALI_TOOLS=%s\nBACKPORTS=%s\nGAMING=%s\nSUITE=%s\n' \
+    "$1" "${2:-}" "${3:-0}" "${4:-0}" "${5:-0}" "$DEBIAN_SUITE" > "$INC/etc/dotfiles-iso.env"
 }
 
 build_one() {                       # $1=edition
-  local e="$1" v
+  local e="$1" v gaming=0
   STACKS=""; KALI_REPO=0; KALI_TOOLS=0; BACKPORTS=0; APPS_TIERS=""; VARIANTS=""
   # shellcheck source=/dev/null
   . "editions/$e.env"
+  [[ " $STACKS " == *" gaming "* ]] && gaming=1
   for v in $VARIANTS; do
     local t0=$SECONDS
     printf '%s\n%s═══ %s / %s  (suite=%s)  stacks:[%s] kali:%s ═══%s\n' \
       "" "$c_b" "$e" "$v" "$DEBIAN_SUITE" "$STACKS" "$KALI_REPO" "$c_0"
     say "[1/5] cleaning previous build state…";            ./auto/clean || true
     say "[2/5] syncing dotfiles into chroot tree…";        sync_dotfiles
-    say "[3/5] staging package lists + Kali/backports/extras…"; stage_lists "$STACKS" "$v"; stage_kali "$KALI_REPO" "$KALI_TOOLS"; stage_backports "$BACKPORTS"; stage_env "$e" "$APPS_TIERS" "$KALI_TOOLS" "$BACKPORTS"
+    say "[3/5] staging package lists + Kali/backports/extras…"; stage_lists "$STACKS" "$v"; stage_kali "$KALI_REPO" "$KALI_TOOLS"; stage_backports "$BACKPORTS"; stage_env "$e" "$APPS_TIERS" "$KALI_TOOLS" "$BACKPORTS" "$gaming"
     say "[4/5] lb config (resolving live-build tree)…";    EDITION="$e" VARIANT="$v" ./auto/config
     say "[5/5] lb build — the long stage: bootstrap → packages → hooks → squashfs → ISO"
     say "      (progress streams below + heartbeat every 30s; full log: iso/build.log)"

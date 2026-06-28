@@ -1,5 +1,6 @@
-# Full gaming stack. Requires i386 multiarch (hook 0100) + contrib/non-free.
-steam-installer
+# Full gaming stack. Requires contrib/non-free. steam-installer is NOT here:
+# it hard-depends on steam-libs-i386, and i386 isn't enabled until the 0100
+# hook (which runs after list install), so the 0100 hook installs steam.
 gamemode
 mangohud
 wine

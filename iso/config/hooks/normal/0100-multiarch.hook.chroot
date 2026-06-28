@@ -1,13 +1,18 @@
 #!/bin/sh
-# Enable i386 multiarch and install 32-bit deps here (NOT via package-lists,
-# which install before hooks run and would fail on unknown :i386 arch).
-# Mirrors local_setup.sh:enable_i386_arch. apt-mark manual so live-build
+# Gaming editions only: enable i386 multiarch, then install the 32-bit libs and
+# steam-installer HERE rather than via package-lists. Package-lists install
+# before hooks run, when i386 isn't enabled yet — so steam-installer (which
+# hard-depends on steam-libs-i386) can't resolve there. Installing post-i386
+# in a hook is the standard live-build approach. apt-mark manual so live-build
 # doesn't prune hook-installed packages (Debian Bug#1062641).
 set -e
+. /etc/dotfiles-iso.env 2>/dev/null || true
+[ "${GAMING:-0}" = 1 ] || { echo "non-gaming edition; skipping i386/steam"; exit 0; }
+
 dpkg --add-architecture i386
 apt-get update
 
-PKGS="libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 libvulkan1:i386 mangohud:i386"
+PKGS="steam-installer libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 libvulkan1:i386 mangohud:i386"
 # nvidia 32-bit libs only when the proprietary driver is present (nvidia variant)
 if dpkg -s nvidia-driver >/dev/null 2>&1; then
   PKGS="$PKGS nvidia-driver-libs:i386"
