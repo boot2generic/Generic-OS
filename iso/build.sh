@@ -35,8 +35,10 @@ update_dotfiles() {
     return 0
   fi
   echo "[dotfiles] pulling latest (submodule tracks main)…"
-  git -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
-    || echo "[dotfiles] WARNING: update failed (offline?) — building from checked-out version"
+  # Bounded so a slow/hanging network can't stall the build — degrade to the
+  # checked-out version on timeout (124) or failure.
+  timeout 180 git -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
+    || echo "[dotfiles] WARNING: update timed out/failed — building from checked-out version"
   echo "[dotfiles] at $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 }
 
