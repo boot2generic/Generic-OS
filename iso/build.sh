@@ -45,20 +45,35 @@ update_dotfiles() {
     say "dotfiles: using checked-out submodule (NO_UPDATE_DOTFILES=1)"
     return 0
   fi
-  # We run as root (sudo), but the git repo is owned by the invoking user.
-  # git refuses operations on another user's repo ("dubious ownership"), so
-  # run the update as that user; writes stay correctly owned too.
-  local git_as=(git)
-  [[ -n "${SUDO_USER:-}" ]] && git_as=(sudo -u "$SUDO_USER" git)
-  say "dotfiles: pulling latest (tracks main; non-interactive, ≤45s or skips)…"
-  # BatchMode + ConnectTimeout: never block on an SSH prompt — fail fast and
-  # fall back to the checked-out dotfiles instead of hanging on a blank screen.
-  export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=15'
-  # Bounded so a slow/hanging network can't stall the build — degrade to the
-  # checked-out version on timeout (124) or failure.
-  timeout 45 "${git_as[@]}" -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
-    || warn "dotfiles update timed out/failed — building from checked-out version"
-  ok "dotfiles at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  # Run git as the invoking user: the repo is user-owned (avoids git's
+  # "dubious ownership" refusal under sudo) and uses that user's config.
+  # GIT_TERMINAL_PROMPT=0 → never block on a credential prompt.
+  local git_as=(env GIT_TERMINAL_PROMPT=0 git)
+  [[ -n "${SUDO_USER:-}" ]] && git_as=(sudo -u "$SUDO_USER" env GIT_TERMINAL_PROMPT=0 git)
+
+  # Pull over HTTPS instead of the configured SSH URL. SSH under sudo HANGS:
+  # sudo strips SSH_AUTH_SOCK (no agent) and the BatchMode env, so git's ssh
+  # blocks on a host-key/auth prompt until the timeout fires. The repo is
+  # public, so HTTPS needs no keys/agent and can't prompt. .gitmodules is left
+  # untouched (clones still use SSH); we only override the URL for this fetch.
+  local url https
+  url=$(git config -f "$PROJECT_DIR/.gitmodules" submodule.dotfiles.url 2>/dev/null || true)
+  https=$(printf '%s' "$url" | sed -E 's#^git@github\.com:#https://github.com/#; s#^ssh://git@github\.com/#https://github.com/#')
+  case "$https" in
+    https://*) ;;
+    *) warn "can't derive an https URL for dotfiles ($url) — using checked-out version"; return 0 ;;
+  esac
+
+  say "dotfiles: pulling latest over https (≤60s; falls back to checked-out)…"
+  "${git_as[@]}" -C "$REPO_DIR" checkout -q main 2>/dev/null || true
+  if timeout 60 "${git_as[@]}" -C "$REPO_DIR" \
+        -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 \
+        fetch --quiet "$https" main 2>/dev/null \
+     && "${git_as[@]}" -C "$REPO_DIR" merge --ff-only --quiet FETCH_HEAD 2>/dev/null; then
+    ok "dotfiles at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  else
+    warn "dotfiles update skipped (offline/diverged) — building from checked-out version"
+  fi
 }
 
 LISTS="config/package-lists"
