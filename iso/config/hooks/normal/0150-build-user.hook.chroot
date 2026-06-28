@@ -1,0 +1,12 @@
+#!/bin/sh
+# local_setup.sh refuses to run as root (by design) and escalates via sudo.
+# Hooks run as root, so we create a throwaway build user with NOPASSWD sudo
+# and run the provisioner as that user. /etc/skel is made writable so the
+# user-side (non-sudo) deploys land there; 9999 reverts ownership + removes
+# the user.
+set -e
+id lbbuild >/dev/null 2>&1 || useradd -M -s /usr/bin/zsh lbbuild
+echo 'lbbuild ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/lbbuild
+chmod 0440 /etc/sudoers.d/lbbuild
+mkdir -p /etc/skel/.config /etc/skel/.local/share
+chown -R lbbuild:lbbuild /etc/skel

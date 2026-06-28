@@ -1,0 +1,12 @@
+#!/bin/sh
+# Deploy user dotfiles into /etc/skel by running local_setup.sh's deploy
+# stage as the build user with HOME=/etc/skel. Calamares copies skel into
+# the new user's home at account creation, so the install is themed out of
+# the box. Desktop must be a flag (the script resets the DESKTOP env var).
+# Internal `sudo` calls escalate via NOPASSWD (set in 0150).
+set -e
+runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
+  /opt/dotfiles/local_setup.sh deploy --plasma
+
+# Default shell = zsh for accounts created from skel.
+sed -i 's#^\(SHELL=\).*#\1/usr/bin/zsh#' /etc/default/useradd 2>/dev/null || true

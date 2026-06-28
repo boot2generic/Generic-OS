@@ -1,0 +1,10 @@
+# Kali rolling repo, baked into editions with KALI_REPO=1. Staged to
+# /etc/apt/sources.list.d/kali.sources. Key verified at build time and
+# stored at /etc/apt/keyrings/kali-archive-keyring.gpg. Pinned low (see
+# kali-pin.pref) so Debian always wins and `apt install <tool>` pulls
+# Kali-only tools on demand without dragging in Kali's rolling base.
+Types: deb
+URIs: http://http.kali.org/kali
+Suites: kali-rolling
+Components: main contrib non-free non-free-firmware
+Signed-By: /etc/apt/keyrings/kali-archive-keyring.gpg

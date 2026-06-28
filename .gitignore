@@ -1,0 +1,5 @@
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# ISO build artifacts are ignored by iso/.gitignore; nothing extra needed here.

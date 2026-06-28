@@ -1,0 +1,17 @@
+#!/bin/sh
+# Enable i386 multiarch and install 32-bit deps here (NOT via package-lists,
+# which install before hooks run and would fail on unknown :i386 arch).
+# Mirrors local_setup.sh:enable_i386_arch. apt-mark manual so live-build
+# doesn't prune hook-installed packages (Debian Bug#1062641).
+set -e
+dpkg --add-architecture i386
+apt-get update
+
+PKGS="libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 libvulkan1:i386 mangohud:i386"
+# nvidia 32-bit libs only when the proprietary driver is present (nvidia variant)
+if dpkg -s nvidia-driver >/dev/null 2>&1; then
+  PKGS="$PKGS nvidia-driver-libs:i386"
+fi
+
+apt-get install -y --no-install-recommends $PKGS
+apt-mark manual $PKGS 2>/dev/null || true

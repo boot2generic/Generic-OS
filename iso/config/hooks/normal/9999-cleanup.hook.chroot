@@ -1,0 +1,19 @@
+#!/bin/sh
+# Final cleanup: remove the build user, restore skel ownership, strip build
+# artifacts and machine identity so every installed system is unique.
+set -e
+
+# /etc/skel must be root-owned; Calamares copies + chowns it to the new user.
+chown -R root:root /etc/skel
+rm -f /etc/sudoers.d/lbbuild /etc/dotfiles-iso.env
+userdel lbbuild 2>/dev/null || true
+
+apt-get clean
+rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+rm -rf /tmp/dotfiles-setup.* 2>/dev/null || true
+
+# Fresh identity per install.
+: > /etc/machine-id
+rm -f /var/lib/dbus/machine-id
+ln -sf /etc/machine-id /var/lib/dbus/machine-id
+rm -f /etc/ssh/ssh_host_* 2>/dev/null || true

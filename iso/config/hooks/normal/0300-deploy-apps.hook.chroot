@@ -1,0 +1,25 @@
+#!/bin/sh
+# Install third-party apps from config/apps/apps.toml via the existing
+# manifest installer (scripts/apps-cli.sh — what apps_install_phase calls;
+# `local_setup.sh apps` is not a standalone action). Run as the build user.
+# Build host is ONLINE here, so GPG/SHA256 pins are enforced and verified
+# binaries are baked. App configs land in /etc/skel (HOME override).
+# apt-mark manual guards against live-build pruning (Debian Bug#1062641).
+set -e
+. /etc/dotfiles-iso.env 2>/dev/null || true          # APPS_TIERS, passed by build.sh
+TIER_ARG=""
+[ -n "${APPS_TIERS:-}" ] && TIER_ARG="--tier ${APPS_TIERS}"
+
+before="$(mktemp)"; dpkg-query -W -f='${Package}\n' > "$before"
+
+runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 sh -c "
+  mkdir -p /etc/skel/.config/dotfiles-state &&
+  echo plasma > /etc/skel/.config/dotfiles-state/desktop &&
+  cd /opt/dotfiles &&
+  ./scripts/apps-cli.sh validate &&
+  ./scripts/apps-cli.sh install ${TIER_ARG}
+" || true
+
+after="$(mktemp)"; dpkg-query -W -f='${Package}\n' > "$after"
+comm -13 "$before" "$after" | xargs -r apt-mark manual 2>/dev/null || true
+rm -f "$before" "$after"

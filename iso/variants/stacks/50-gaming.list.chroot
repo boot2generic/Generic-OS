@@ -1,0 +1,10 @@
+# Full gaming stack. Requires i386 multiarch (hook 0100) + contrib/non-free.
+steam-installer
+gamemode
+mangohud
+gamescope
+wine
+winetricks
+lutris
+vkbasalt
+# protontricks is not in Debian trixie — install via pipx/flatpak post-boot if needed.

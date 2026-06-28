@@ -1,0 +1,20 @@
+#!/bin/sh
+# live-build `lb config` step. Reads ../config.env and the EDITION/VARIANT
+# env vars (set by build.sh). Parameterized so Debian 14 = one edit in config.env.
+set -e
+. "$(dirname "$0")/../config.env"
+EDITION="${EDITION:-everything}"
+VARIANT="${VARIANT:-universal}"
+LABEL="${ISO_VOLUME_PREFIX}-${EDITION}-${VARIANT}"
+
+lb config noauto \
+  --distribution "$DEBIAN_SUITE" \
+  --architectures "$ARCH" \
+  --archive-areas "$ARCHIVE_AREAS" \
+  --mirror-bootstrap "$DEBIAN_MIRROR" \
+  --mirror-binary "$DEBIAN_MIRROR" \
+  --debian-installer none \
+  --bootappend-live "boot=live components quiet splash" \
+  --iso-volume "$LABEL" \
+  --iso-application "Cyberpunk Debian (${EDITION}/${VARIANT})" \
+  "${@}"

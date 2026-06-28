@@ -1,0 +1,22 @@
+#!/bin/sh
+# Bake curated Kali tools (security edition, KALI_TOOLS=1). The pinned Kali
+# repo + key were staged into the chroot by build.sh, so it's active here.
+# Pinned at priority 100, so these Kali-only tools install while Debian
+# packages stay on Debian versions. apt-mark manual dodges live-build pruning.
+set -e
+. /etc/dotfiles-iso.env 2>/dev/null || true
+[ "${KALI_TOOLS:-0}" = 1 ] || { echo "KALI_TOOLS!=1; skip"; exit 0; }
+[ -f /etc/dotfiles-kali-tools.list ] || { echo "no kali-tools list; skip"; exit 0; }
+
+PKGS=$(grep -vE '^\s*#' /etc/dotfiles-kali-tools.list | grep -vE '^\s*$' | tr '\n' ' ')
+[ -n "$PKGS" ] || exit 0
+
+apt-get update
+# Best-effort per-tool so one unavailable package doesn't fail the whole build.
+for p in $PKGS; do
+  if apt-get install -y --no-install-recommends "$p"; then
+    apt-mark manual "$p" 2>/dev/null || true
+  else
+    echo "WARNING: kali tool '$p' failed to install — skipping"
+  fi
+done

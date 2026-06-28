@@ -1,0 +1,21 @@
+# Curated common Kali tools baked into the security edition (KALI_TOOLS=1).
+# Installed from the pinned Kali repo at build time. Edit freely — one
+# package per line, '#' comments ignored. These are mostly Kali-only tools
+# (not in Debian); Debian-provided tools (nmap, wireshark, hydra, john,
+# hashcat, sqlmap, aircrack-ng) already come from the 40-security stack.
+metasploit-framework
+burpsuite
+exploitdb
+seclists
+wordlists
+feroxbuster
+ffuf
+nikto
+wpscan
+dirb
+wfuzz
+netexec
+responder
+enum4linux-ng
+dnsenum
+amass

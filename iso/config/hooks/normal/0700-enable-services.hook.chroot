@@ -1,0 +1,9 @@
+#!/bin/sh
+# Enable (never start — no systemd in chroot) the services the installed
+# system needs running on first boot.
+set -e
+systemctl enable sddm 2>/dev/null || true
+systemctl enable NetworkManager 2>/dev/null || true
+# Power management: harmless to enable; tlp only acts on battery hardware.
+systemctl enable tlp 2>/dev/null || true
+systemctl enable thermald 2>/dev/null || true

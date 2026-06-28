@@ -1,0 +1,27 @@
+#!/bin/sh
+# NVIDIA variant only (gated on the driver being installed). Writes the
+# STATIC kernel cmdline / initramfs / power-management config into the
+# squashfs. Calamares regenerates grub + initramfs on the target during
+# install, so these take effect on the installed system. We do NOT run
+# update-grub here (the live ISO boots via live-build's own loader).
+set -e
+dpkg -s nvidia-driver >/dev/null 2>&1 || { echo "no nvidia-driver; skip"; exit 0; }
+
+grub=/etc/default/grub
+if [ -f "$grub" ] && ! grep -q 'nvidia-drm.modeset=1' "$grub"; then
+  sed -i -E 's/^(GRUB_CMDLINE_LINUX_DEFAULT=")([^"]*)"/\1\2 nvidia-drm.modeset=1 nvidia-drm.fbdev=1"/' "$grub"
+fi
+
+mods=/etc/initramfs-tools/modules
+for m in nvidia nvidia_modeset nvidia_uvm nvidia_drm; do
+  grep -qE "^[[:space:]]*${m}([[:space:]]|$)" "$mods" 2>/dev/null || echo "$m" >> "$mods"
+done
+update-initramfs -u || true   # builds the live initramfs; target rebuilt by Calamares
+
+printf 'options nvidia NVreg_PreserveVideoMemoryAllocations=1\n' \
+  > /etc/modprobe.d/nvidia-power-management.conf
+
+systemctl enable nvidia-persistenced 2>/dev/null || true
+for u in nvidia-suspend nvidia-resume nvidia-hibernate; do
+  systemctl enable "$u.service" 2>/dev/null || true
+done

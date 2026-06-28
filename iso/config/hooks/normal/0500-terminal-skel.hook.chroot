@@ -1,0 +1,7 @@
+#!/bin/sh
+# Shell stack into /etc/skel: oh-my-zsh, tmux tpm, starship, nvim plugins,
+# nerd fonts. Reuses local_setup.sh's terminal stage as the build user.
+# --no-nix per project decision; plugin pre-warm is best-effort.
+set -e
+runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
+  /opt/dotfiles/local_setup.sh terminal --plasma --no-nix || true

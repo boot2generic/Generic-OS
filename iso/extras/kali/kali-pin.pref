@@ -1,0 +1,7 @@
+# Pin Kali low so it NEVER auto-upgrades Debian packages (no frankendebian).
+# Priority 100: Debian (500) always wins for shared packages; Kali-only
+# tools still install on explicit `apt install <tool>`. Staged to
+# /etc/apt/preferences.d/kali-pin.
+Package: *
+Pin: release o=Kali
+Pin-Priority: 100

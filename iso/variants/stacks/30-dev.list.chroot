@@ -1,0 +1,13 @@
+# Development stack.
+nodejs
+npm
+python3-pip
+python3-venv
+clang
+gdb
+make
+cmake
+pkg-config
+direnv
+shellcheck
+jq

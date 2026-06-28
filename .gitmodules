@@ -1,0 +1,4 @@
+[submodule "dotfiles"]
+	path = dotfiles
+	url = git@github.com:boot2generic/dotfiles.git
+	branch = main

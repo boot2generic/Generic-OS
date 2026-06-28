@@ -1,0 +1,16 @@
+# Curated core security-research set. Heavy/GUI tools (metasploit, burp,
+# ghidra) intentionally left for on-demand install.
+nmap
+wireshark
+tcpdump
+radare2
+binwalk
+john
+hashcat
+sqlmap
+aircrack-ng
+hydra
+gobuster
+netcat-openbsd
+whois
+dnsutils

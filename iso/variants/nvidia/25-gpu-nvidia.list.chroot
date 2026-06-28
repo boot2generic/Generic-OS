@@ -1,0 +1,9 @@
+# NVIDIA driver baked into the squashfs (nvidia variant only).
+# build.sh copies this into config/package-lists/ when VARIANT=nvidia.
+# DKMS module builds at build time against linux-headers-amd64.
+nvidia-driver
+nvidia-driver-libs
+nvidia-settings
+nvidia-vaapi-driver
+nvidia-persistenced
+firmware-misc-nonfree
