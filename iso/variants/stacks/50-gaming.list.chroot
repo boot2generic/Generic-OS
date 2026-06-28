@@ -2,9 +2,10 @@
 steam-installer
 gamemode
 mangohud
-gamescope
 wine
 winetricks
 lutris
 vkbasalt
-# protontricks is not in Debian trixie — install via pipx/flatpak post-boot if needed.
+# Not in Debian trixie — install post-boot if needed:
+#   gamescope    → trixie-backports or flatpak
+#   protontricks → pipx/flatpak

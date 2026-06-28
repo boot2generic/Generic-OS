@@ -3,7 +3,6 @@
 nmap
 wireshark
 tcpdump
-radare2
 binwalk
 john
 hashcat
@@ -13,4 +12,7 @@ hydra
 gobuster
 netcat-openbsd
 whois
-dnsutils
+bind9-dnsutils
+# radare2 is not in Debian trixie — it's installed from the Kali repo
+# (extras/kali/kali-tools.list) on the security edition, or on demand via
+# `apt install radare2` on any edition that ships the Kali repo.

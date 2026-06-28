@@ -5,6 +5,7 @@
 # hashcat, sqlmap, aircrack-ng) already come from the 40-security stack.
 metasploit-framework
 burpsuite
+radare2
 exploitdb
 seclists
 wordlists
