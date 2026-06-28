@@ -20,20 +20,36 @@ dolphin
 kwallet6
 polkit-kde-agent-1
 kde-config-screenlocker
+kde-config-sddm
 kde-cli-tools
 kdialog
+kinfocenter
+kio-extras
+ksshaskpass
 plasma-systemmonitor
 upower
+powerdevil
+bluedevil
 plasma-nm
 plasma-pa
 systemsettings
 kscreen
+xdg-desktop-portal-kde
 breeze
 breeze-cursor-theme
 breeze-icon-theme
+kf6-breeze-icon-theme
 breeze-gtk-theme
 kde-config-gtk-style
 papirus-icon-theme
 adwaita-icon-theme
+# KDE CLI helpers used by deploy/apply-theme (kwriteconfig6, qdbus6) — without
+# these the i3-style shortcut merge and theme application silently no-op.
+libkf6config-bin
+libkf6dbusaddons-bin
+qdbus-qt6
+# Wallpaper generator (Pillow) + dbus bindings used by the deploy step.
+python3-pil
+python3-dbus
 alacritty
 firefox-esr
