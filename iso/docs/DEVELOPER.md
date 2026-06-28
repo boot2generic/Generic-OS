@@ -26,6 +26,7 @@ An **edition** is a named composition, defined declaratively in `editions/<name>
 | `STACKS` | space-separated: `dev` `security` `gaming` → `variants/stacks/{30-dev,40-security,50-gaming}` |
 | `KALI_REPO` | `1` = stage the pinned-low Kali repo + key (on-demand `apt install`) |
 | `KALI_TOOLS` | `1` = also bake the curated `extras/kali/kali-tools.list` |
+| `BACKPORTS` | `1` = stage the official Debian backports repo (for gamescope etc.) |
 | `APPS_TIERS` | passed to `apps-cli.sh --tier` (empty = all; `1` = core) |
 | `VARIANTS` | which GPU variants to build (`universal`, `nvidia`) |
 
@@ -45,6 +46,7 @@ existing provisioner instead of reimplementing it:
 | Shell stack (omz/tpm/starship/nvim) | `0500-terminal-skel` runs `local_setup.sh terminal` into skel. |
 | System files (`/etc`, `/usr/local`) | `build.sh` rsyncs `config/system/` into `includes.chroot`. |
 | Kali tools (security edition) | `0400-kali-tools` installs `extras/kali/kali-tools.list` from the pinned repo when `KALI_TOOLS=1`. |
+| Gaming extras not in stable | `0450-gaming-extras` installs gamescope from backports (`-t <suite>-backports`) and protontricks via pipx (global, `/opt/pipx`). No flatpak. |
 | NVIDIA cmdline/initramfs/PM | `0600-nvidia-bake` writes static config; Calamares regenerates grub+initramfs on the target. |
 | Services | `0700-enable-services` `systemctl enable` (never `start` — no systemd in chroot). |
 | Identity/cleanup | `9999-cleanup` clears machine-id, ssh host keys, apt cache. |
@@ -86,6 +88,14 @@ the new suite (`../scripts/refresh-pins.sh`) and verify any deb822 `.sources` un
 
 ## Gotchas
 - Build on a host matching `DEBIAN_SUITE` (index/dep parity).
+- **Validate package availability with `./check-packages.sh` before building** — it
+  checks every list package has a real install *Candidate* (`apt-cache show` is NOT
+  enough; it succeeds for uninstallable packages and will let a build fail late).
+- **Package sourcing policy (no flatpak):** if a package isn't in Debian stable, source it
+  natively — official **backports** (`BACKPORTS=1`, e.g. gamescope), the **Kali** repo
+  (security tools, e.g. radare2), or **pipx** for pure-Python upstream CLIs (e.g.
+  protontricks). Don't drop to flatpak. Backports/Kali packages are installed via hooks
+  (not package-lists), so `check-packages.sh` skips them.
 - Declare apt packages in package-lists; hook-installed packages are `apt-mark manual`'d
   to dodge live-build pruning ([Bug#1062641](https://bugs.debian.org/1062641)).
 - Never `systemctl start` in a hook. grub/initramfs regen happens on the target via Calamares.

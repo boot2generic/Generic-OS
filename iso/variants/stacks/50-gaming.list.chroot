@@ -6,6 +6,8 @@ wine
 winetricks
 lutris
 vkbasalt
-# Not in Debian trixie — install post-boot if needed:
-#   gamescope    → trixie-backports or flatpak
-#   protontricks → pipx/flatpak
+pipx
+yad
+# Native, baked by the 0450-gaming-extras hook (no flatpak):
+#   gamescope    → official trixie-backports repo (BACKPORTS=1)
+#   protontricks → pipx (real upstream CLI; not in Debian trixie)

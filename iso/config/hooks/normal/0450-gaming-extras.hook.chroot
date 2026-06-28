@@ -1,0 +1,28 @@
+#!/bin/sh
+# Native (non-flatpak) gaming tools that aren't in Debian stable:
+#   - gamescope   → installed from the official backports repo (staged when
+#                   BACKPORTS=1) with an explicit target release.
+#   - protontricks→ not in Debian trixie/backports; install the real upstream
+#                   CLI via pipx, system-wide under /opt/pipx (stable absolute
+#                   path → survives the skel→home copy on the installed system).
+# Gated on the gaming stack being present (steam-installer). Best-effort: a
+# failure here warns but doesn't abort the build.
+set -e
+. /etc/dotfiles-iso.env 2>/dev/null || true
+dpkg -s steam-installer >/dev/null 2>&1 || { echo "no gaming stack; skipping gaming extras"; exit 0; }
+
+if [ "${BACKPORTS:-0}" = 1 ]; then
+  apt-get update
+  if apt-get install -y --no-install-recommends -t "${SUITE:-trixie}-backports" gamescope; then
+    apt-mark manual gamescope 2>/dev/null || true
+  else
+    echo "WARNING: gamescope from backports failed"
+  fi
+fi
+
+if command -v pipx >/dev/null 2>&1; then
+  PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install protontricks \
+    || echo "WARNING: protontricks pipx install failed"
+else
+  echo "WARNING: pipx not present — skipping protontricks"
+fi

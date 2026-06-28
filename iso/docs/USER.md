@@ -40,7 +40,9 @@ By edition, additionally:
 - **security / everything:** nmap, wireshark, tcpdump, radare2, binwalk, john, hashcat,
   sqlmap, aircrack-ng, hydra, gobuster — plus the **Kali repo** (security bakes in
   metasploit, burpsuite, ffuf, seclists, and more).
-- **gaming / everything:** Steam, Lutris, Wine, GameMode, MangoHud, gamescope.
+- **gaming / everything:** Steam, Lutris, Wine, GameMode, MangoHud, gamescope (from
+  official Debian backports), and protontricks (upstream CLI via pipx). The official
+  **backports** repo is preconfigured (pinned low) for newer packages on demand.
 - **Apps:** KeePassXC, browsers, and (everything/security) Signal, Obsidian, Thunderbird,
   Syncthing, etc. — see `config/apps/apps.toml`.
 

@@ -100,13 +100,24 @@ stage_kali() {                      # $1=KALI_REPO  $2=KALI_TOOLS
   return 0
 }
 
-stage_env() {                       # $1=edition  $2=app-tiers  $3=kali-tools
-  printf 'EDITION=%s\nAPPS_TIERS=%s\nKALI_TOOLS=%s\n' "$1" "${2:-}" "${3:-0}" > "$INC/etc/dotfiles-iso.env"
+stage_backports() {                 # $1=BACKPORTS
+  [[ "$1" == 1 ]] || return 0
+  # Official Debian backports (no key/pin needed — debian-archive-keyring +
+  # apt's auto NotAutomatic pin). Codename templated from DEBIAN_SUITE.
+  mkdir -p "$INC/etc/apt/sources.list.d"
+  sed "s/@SUITE@/${DEBIAN_SUITE}/g" extras/backports/backports.sources.in \
+    > "$INC/etc/apt/sources.list.d/backports.sources"
+  return 0
+}
+
+stage_env() {                       # $1=edition $2=app-tiers $3=kali-tools $4=backports
+  printf 'EDITION=%s\nAPPS_TIERS=%s\nKALI_TOOLS=%s\nBACKPORTS=%s\nSUITE=%s\n' \
+    "$1" "${2:-}" "${3:-0}" "${4:-0}" "$DEBIAN_SUITE" > "$INC/etc/dotfiles-iso.env"
 }
 
 build_one() {                       # $1=edition
   local e="$1" v
-  STACKS=""; KALI_REPO=0; KALI_TOOLS=0; APPS_TIERS=""; VARIANTS=""
+  STACKS=""; KALI_REPO=0; KALI_TOOLS=0; BACKPORTS=0; APPS_TIERS=""; VARIANTS=""
   # shellcheck source=/dev/null
   . "editions/$e.env"
   for v in $VARIANTS; do
@@ -115,7 +126,7 @@ build_one() {                       # $1=edition
       "" "$c_b" "$e" "$v" "$DEBIAN_SUITE" "$STACKS" "$KALI_REPO" "$c_0"
     say "[1/5] cleaning previous build state…";            ./auto/clean || true
     say "[2/5] syncing dotfiles into chroot tree…";        sync_dotfiles
-    say "[3/5] staging package lists + Kali/extras…";      stage_lists "$STACKS" "$v"; stage_kali "$KALI_REPO" "$KALI_TOOLS"; stage_env "$e" "$APPS_TIERS" "$KALI_TOOLS"
+    say "[3/5] staging package lists + Kali/backports/extras…"; stage_lists "$STACKS" "$v"; stage_kali "$KALI_REPO" "$KALI_TOOLS"; stage_backports "$BACKPORTS"; stage_env "$e" "$APPS_TIERS" "$KALI_TOOLS" "$BACKPORTS"
     say "[4/5] lb config (resolving live-build tree)…";    EDITION="$e" VARIANT="$v" ./auto/config
     say "[5/5] lb build — the long stage: bootstrap → packages → hooks → squashfs → ISO"
     say "      (progress streams below + heartbeat every 30s; full log: iso/build.log)"

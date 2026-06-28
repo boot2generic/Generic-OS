@@ -1,0 +1,14 @@
+# Official Debian backports — newer packages built for the stable release.
+# Staged into editions with BACKPORTS=1. @SUITE@ is substituted by build.sh
+# so this tracks DEBIAN_SUITE (trixie today, the next codename later).
+#
+# No key management and no pin file needed: backports is part of the main
+# Debian archive (covered by debian-archive-keyring) and apt auto-pins it to
+# priority 100 via its NotAutomatic flag — so nothing auto-upgrades from it;
+# packages install only on explicit request (`apt install -t @SUITE@-backports
+# <pkg>`) or when stable has no candidate (e.g. gamescope).
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: @SUITE@-backports
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
