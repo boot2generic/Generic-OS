@@ -1,4 +1,4 @@
-# custom_os — Cyberpunk Debian ISO project
+# Generic-OS
 
 Build custom **Debian 13 (trixie)** installable ISOs with a themed KDE **Plasma 6 /
 Wayland** desktop, applications, services, and dotfiles **baked in** — so a fresh
@@ -33,7 +33,7 @@ pulls Kali-only tools on demand without destabilizing the base system.
 
 ## Structure
 ```
-custom_os/                  ← this project repo
+Generic-OS/                 ← this project repo
 ├── iso/                    ← the ISO builder (see iso/README.md)
 │   ├── build.sh            ← orchestrator (edition × variant matrix)
 │   ├── config.env          ← suite, arch, editions, Kali key pin
@@ -52,7 +52,7 @@ sudo apt install live-build rsync gpg curl
 
 ## Clone (get the dotfiles submodule too)
 ```bash
-git clone --recurse-submodules <this-repo-url> custom_os
+git clone --recurse-submodules <this-repo-url> Generic-OS
 # already cloned without submodules?
 git submodule update --init --remote dotfiles
 ```

@@ -1,6 +1,6 @@
-# Cyberpunk Debian ISO builder
+# Generic-OS ISO builder
 
-Builds custom Debian 13 (trixie) installable ISOs with the dotfiles desktop,
+Builds the Generic-OS Debian 13 (trixie) installable ISOs with the dotfiles desktop,
 apps, services, and theming **baked in**. The build host (online) pulls the
 latest software; the resulting ISOs **install with zero internet**.
 
