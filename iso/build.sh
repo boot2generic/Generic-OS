@@ -24,6 +24,17 @@ cd "$ISO_DIR"
 [[ $EUID -eq 0 ]] || { echo "build.sh must run as root (live-build needs it)"; exit 1; }
 command -v lb >/dev/null || { echo "install live-build: apt install live-build"; exit 1; }
 
+# --- progress / logging helpers -------------------------------------------
+if [[ -t 1 ]]; then
+  c_b=$'\033[1;36m'; c_g=$'\033[1;32m'; c_y=$'\033[1;33m'; c_0=$'\033[0m'
+else
+  c_b=; c_g=; c_y=; c_0=
+fi
+ts()   { date +%H:%M:%S; }
+say()  { printf '%s[%s]%s %s\n' "$c_b" "$(ts)" "$c_0" "$*"; }
+ok()   { printf '%s[%s] ✓ %s%s\n' "$c_g" "$(ts)" "$*" "$c_0"; }
+warn() { printf '%s[%s] ! %s%s\n' "$c_y" "$(ts)" "$*" "$c_0"; }
+
 # Ensure the dotfiles submodule is present and (by default) up to date.
 update_dotfiles() {
   if [[ ! -e "$REPO_DIR/local_setup.sh" ]]; then
@@ -31,7 +42,7 @@ update_dotfiles() {
     exit 1
   fi
   if [[ "${NO_UPDATE_DOTFILES:-0}" == 1 ]]; then
-    echo "[dotfiles] using checked-out submodule (NO_UPDATE_DOTFILES=1)"
+    say "dotfiles: using checked-out submodule (NO_UPDATE_DOTFILES=1)"
     return 0
   fi
   # We run as root (sudo), but the git repo is owned by the invoking user.
@@ -39,12 +50,15 @@ update_dotfiles() {
   # run the update as that user; writes stay correctly owned too.
   local git_as=(git)
   [[ -n "${SUDO_USER:-}" ]] && git_as=(sudo -u "$SUDO_USER" git)
-  echo "[dotfiles] pulling latest (submodule tracks main)…"
+  say "dotfiles: pulling latest (tracks main; non-interactive, ≤45s or skips)…"
+  # BatchMode + ConnectTimeout: never block on an SSH prompt — fail fast and
+  # fall back to the checked-out dotfiles instead of hanging on a blank screen.
+  export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=15'
   # Bounded so a slow/hanging network can't stall the build — degrade to the
   # checked-out version on timeout (124) or failure.
-  timeout 180 "${git_as[@]}" -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
-    || echo "[dotfiles] WARNING: update timed out/failed — building from checked-out version"
-  echo "[dotfiles] at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  timeout 45 "${git_as[@]}" -C "$PROJECT_DIR" submodule update --remote --merge dotfiles \
+    || warn "dotfiles update timed out/failed — building from checked-out version"
+  ok "dotfiles at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 }
 
 LISTS="config/package-lists"
@@ -96,20 +110,22 @@ build_one() {                       # $1=edition
   # shellcheck source=/dev/null
   . "editions/$e.env"
   for v in $VARIANTS; do
-    echo "=== building edition=$e variant=$v (suite=$DEBIAN_SUITE) ==="
-    ./auto/clean || true
-    sync_dotfiles
-    stage_lists "$STACKS" "$v"
-    stage_kali "$KALI_REPO" "$KALI_TOOLS"
-    stage_env "$e" "$APPS_TIERS" "$KALI_TOOLS"
-    EDITION="$e" VARIANT="$v" ./auto/config
+    local t0=$SECONDS
+    printf '%s\n%s═══ %s / %s  (suite=%s)  stacks:[%s] kali:%s ═══%s\n' \
+      "" "$c_b" "$e" "$v" "$DEBIAN_SUITE" "$STACKS" "$KALI_REPO" "$c_0"
+    say "[1/5] cleaning previous build state…";            ./auto/clean || true
+    say "[2/5] syncing dotfiles into chroot tree…";        sync_dotfiles
+    say "[3/5] staging package lists + Kali/extras…";      stage_lists "$STACKS" "$v"; stage_kali "$KALI_REPO" "$KALI_TOOLS"; stage_env "$e" "$APPS_TIERS" "$KALI_TOOLS"
+    say "[4/5] lb config (resolving live-build tree)…";    EDITION="$e" VARIANT="$v" ./auto/config
+    say "[5/5] lb build — the long stage: bootstrap → packages → hooks → squashfs → ISO"
+    say "      (progress streams below + heartbeat every 30s; full log: iso/build.log)"
     ./auto/build
     mkdir -p out
     local iso="out/${DEBIAN_SUITE}-${e}-${v}.iso"
     mv -f live-image-*.iso "$iso"
     # Built under sudo → root-owned; hand back to the invoking user.
     [[ -n "${SUDO_USER:-}" ]] && chown "$SUDO_USER":"$(id -gn "$SUDO_USER")" "$iso" 2>/dev/null || true
-    echo "=== done: $iso ==="
+    ok "$e/$v built in $(( (SECONDS-t0)/60 ))m$(( (SECONDS-t0)%60 ))s → $iso"
   done
 }
 

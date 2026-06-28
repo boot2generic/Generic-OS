@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # bash + pipefail so a failed `lb build` propagates instead of being masked
-# by tee's exit status (a silent failure would otherwise let build.sh move a
-# stale ISO as if the build succeeded).
+# by tee's exit status. stdbuf line-buffers lb's output so it streams live
+# instead of appearing in chunks. A background heartbeat prints elapsed time
+# and the latest live-build stage every 30s, so long silent stages
+# (debootstrap, mksquashfs) don't look like a hang.
 set -eo pipefail
-lb build noauto "${@}" 2>&1 | tee build.log
+
+start=$(date +%s)
+heartbeat() {
+  while sleep 30; do
+    el=$(( $(date +%s) - start ))
+    stage=$(grep -aE '^P: ' build.log 2>/dev/null | tail -1 | sed 's/^P: //')
+    printf '\033[2m  … still building — %dm%02ds elapsed%s\033[0m\n' \
+      "$((el/60))" "$((el%60))" "${stage:+ | $stage}"
+  done
+}
+heartbeat & hb=$!
+trap 'kill "$hb" 2>/dev/null || true' EXIT
+
+stdbuf -oL -eL lb build noauto "${@}" 2>&1 | tee build.log
