@@ -95,6 +95,14 @@ sync_dotfiles() {
     --exclude='.git' --exclude='bundle/' \
     --exclude='__pycache__/' --exclude='*.pyc' \
     "$REPO_DIR/" "$INC/opt/dotfiles/"
+
+  # Do NOT pre-bake the app apt-source descriptors from config/system: they're
+  # templates the apps adapter deploys itself (with $(distro_codename)
+  # substitution) during the 0300 hook. Baking them raw puts an unsubstituted
+  # mullvad source into /etc/apt, which breaks apt-get update in earlier hooks.
+  # The adapter recreates the correct sources for whatever apps it installs;
+  # our kali/backports sources are staged separately after this.
+  rm -f "$INC"/etc/apt/sources.list.d/*.sources "$INC"/etc/apt/sources.list.d/*.list 2>/dev/null || true
 }
 
 stage_lists() {                     # $1=stacks  $2=variant
