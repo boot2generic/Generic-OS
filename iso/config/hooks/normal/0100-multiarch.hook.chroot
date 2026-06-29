@@ -6,6 +6,7 @@
 # in a hook is the standard live-build approach. apt-mark manual so live-build
 # doesn't prune hook-installed packages (Debian Bug#1062641).
 set -e
+export DEBIAN_FRONTEND=noninteractive
 . /etc/dotfiles-iso.env 2>/dev/null || true
 [ "${GAMING:-0}" = 1 ] || { echo "non-gaming edition; skipping i386/steam"; exit 0; }
 

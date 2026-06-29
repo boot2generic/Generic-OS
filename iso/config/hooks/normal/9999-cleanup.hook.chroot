@@ -6,6 +6,7 @@ set -e
 # /etc/skel must be root-owned; Calamares copies + chowns it to the new user.
 chown -R root:root /etc/skel
 rm -f /etc/sudoers.d/lbbuild /etc/dotfiles-iso.env /etc/dotfiles-kali-tools.list
+rm -f /etc/apt/apt.conf.d/90dotfiles-build   # build-only non-interactive dpkg policy
 userdel lbbuild 2>/dev/null || true
 
 apt-get clean

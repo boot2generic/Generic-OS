@@ -103,6 +103,18 @@ sync_dotfiles() {
   # The adapter recreates the correct sources for whatever apps it installs;
   # our kali/backports sources are staged separately after this.
   rm -f "$INC"/etc/apt/sources.list.d/*.sources "$INC"/etc/apt/sources.list.d/*.list 2>/dev/null || true
+
+  # Build-only: non-interactive dpkg conffile handling. A package installed in a
+  # hook (e.g. kali-defaults) may ship a file we already deployed to /etc/skel
+  # (.zshrc) — dpkg would then block on an interactive conffile prompt, which
+  # has no stdin in the build and aborts. Keep OUR version (confold) silently.
+  # Removed from the final image by 9999-cleanup so the installed system's apt
+  # behaves normally.
+  mkdir -p "$INC/etc/apt/apt.conf.d"
+  cat > "$INC/etc/apt/apt.conf.d/90dotfiles-build" <<'EOF'
+Dpkg::Options { "--force-confdef"; "--force-confold"; };
+Dpkg::Use-Pty "0";
+EOF
 }
 
 stage_lists() {                     # $1=stacks  $2=variant

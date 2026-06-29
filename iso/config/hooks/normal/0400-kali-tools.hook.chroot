@@ -4,6 +4,7 @@
 # Pinned at priority 100, so these Kali-only tools install while Debian
 # packages stay on Debian versions. apt-mark manual dodges live-build pruning.
 set -e
+export DEBIAN_FRONTEND=noninteractive    # no debconf prompts (conffiles: apt.conf.d/90dotfiles-build)
 . /etc/dotfiles-iso.env 2>/dev/null || true
 [ "${KALI_TOOLS:-0}" = 1 ] || { echo "KALI_TOOLS!=1; skip"; exit 0; }
 [ -f /etc/dotfiles-kali-tools.list ] || { echo "no kali-tools list; skip"; exit 0; }
