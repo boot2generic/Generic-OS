@@ -25,8 +25,9 @@ INC="config/includes.chroot"
 detect_runtime() { for c in podman docker; do command -v "$c" >/dev/null 2>&1 && { echo "$c"; return; }; done; echo ""; }
 RT="$(detect_runtime)"
 
-clean() {
-  if [ -n "$RT" ]; then
+clean() {   # $1=purge → also drop the download cache and the runtime image
+  local purge="${1:-}"
+  if [ -n "$RT" ] && [ "$purge" = purge ]; then
     echo "[container] removing containers + image '$IMAGE'…"
     # shellcheck disable=SC2046
     "$RT" rm -f $("$RT" ps -aq --filter "ancestor=$IMAGE" 2>/dev/null) 2>/dev/null || true
@@ -34,15 +35,22 @@ clean() {
   fi
   echo "[container] removing host build artifacts…"
   ./auto/clean 2>/dev/null || true
-  rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt"
-  rm -rf .build chroot binary cache
+  rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt" config/includes.chroot_before_packages
+  rm -rf .build chroot binary
   local l
   for l in 25-gpu-nvidia 30-dev 40-security 50-gaming live; do rm -f "config/package-lists/$l.list.chroot"; done
-  echo "[container] clean complete. ISOs in out/ were kept — remove them too with: sudo rm -f out/*.iso"
+  if [ "$purge" = purge ]; then
+    rm -rf cache
+    echo "[container] purge complete (download cache + image removed)."
+  else
+    echo "[container] clean complete. Kept: cache/ (fast rebuilds) and out/*.iso + the build image."
+    echo "[container] full wipe incl. cache + image: sudo ./container-build.sh purge"
+  fi
 }
 
 case "${1:-}" in
   clean) clean; exit 0 ;;
+  purge) clean purge; exit 0 ;;
 esac
 
 # Ensure a container runtime is available.

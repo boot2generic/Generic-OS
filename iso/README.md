@@ -17,8 +17,13 @@ latest software; the resulting ISOs **install with zero internet**.
 cd iso
 sudo ./container-build.sh             # build every edition → out/*.iso
 sudo ./container-build.sh security    # one edition
-sudo ./container-build.sh clean       # remove container(s), image, build artifacts
+sudo ./container-build.sh clean       # remove build artifacts, KEEP cache/ (fast rebuilds)
+sudo ./container-build.sh purge       # also drop the download cache + build image
 ```
+**Speed:** the first build is download-bound (~GBs). `clean` keeps the package/bootstrap
+**cache**, so later builds skip the downloads. Squashfs uses **zstd** (`SQUASHFS_LEVEL`
+in config.env) instead of slow xz, and dpkg runs with `force-unsafe-io` during the build —
+together cutting a warm rebuild well under the first run. Build one edition at a time.
 **On-host** (runs live-build directly):
 ```bash
 sudo apt install live-build rsync gpg curl    # trixie host

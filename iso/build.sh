@@ -78,10 +78,11 @@ update_dotfiles() {
 
 LISTS="config/package-lists"
 INC="config/includes.chroot"
+INC_BP="config/includes.chroot_before_packages"   # staged, build-only (force-unsafe-io)
 GENERATED_LISTS="25-gpu-nvidia 30-dev 40-security 50-gaming"
 
 clear_generated_lists() { for l in $GENERATED_LISTS; do rm -f "$LISTS/$l.list.chroot"; done; }
-clean() { ./auto/clean || true; rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt"; clear_generated_lists; }
+clean() { ./auto/clean || true; rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt" "${INC_BP:?}"; clear_generated_lists; }
 
 stack_file() { case "$1" in dev) echo 30-dev;; security) echo 40-security;; gaming) echo 50-gaming;; *) return 1;; esac; }
 
@@ -114,7 +115,15 @@ sync_dotfiles() {
   cat > "$INC/etc/apt/apt.conf.d/90dotfiles-build" <<'EOF'
 Dpkg::Options { "--force-confdef"; "--force-confold"; };
 Dpkg::Use-Pty "0";
+Acquire::Languages "none";
 EOF
+
+  # Build-only speed: tell dpkg to skip fsync during the build (the chroot is
+  # ephemeral, so durability doesn't matter). Big win on package install/config.
+  # Staged in includes.chroot_before_packages so it's active for the BASE
+  # install too; removed from the image by 9999-cleanup.
+  mkdir -p "$INC_BP/etc/dpkg/dpkg.cfg.d"
+  printf 'force-unsafe-io\n' > "$INC_BP/etc/dpkg/dpkg.cfg.d/force-unsafe-io"
 }
 
 stage_lists() {                     # $1=stacks  $2=variant
