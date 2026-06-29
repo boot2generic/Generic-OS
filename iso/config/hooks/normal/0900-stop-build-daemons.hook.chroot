@@ -1,0 +1,21 @@
+#!/bin/sh
+# Runs after our hooks, before live-build's cleanup hooks. The apps/terminal
+# phases run as lbbuild and can leave daemons behind (tpm starts a tmux server
+# whose socket lives in /tmp; pass/gopass may leave gpg-agent/dirmngr). A live
+# daemon still touching /tmp makes live-build's later 8070-remove-temporary-
+# files (`rm -rf /tmp`) fail with "Directory not empty" and abort the build.
+# Kill the build user's strays, unmount anything under the temp dirs, drop
+# immutable bits, and empty /tmp + /var/tmp so 8070 can't trip.
+set -e
+
+pkill -u lbbuild 2>/dev/null || true
+pkill -9 -u lbbuild 2>/dev/null || true
+
+# Lazy-unmount any stray mounts under the temp dirs (paranoia for privileged builds).
+awk '$2 ~ /^\/(tmp|var\/tmp)(\/|$)/ {print $2}' /proc/mounts 2>/dev/null | sort -r \
+  | while read -r m; do umount -l "$m" 2>/dev/null || true; done
+
+chattr -R -i /tmp /var/tmp 2>/dev/null || true
+rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* \
+       /var/tmp/* /var/tmp/.[!.]* /var/tmp/..?* 2>/dev/null || true
+exit 0
