@@ -10,7 +10,10 @@ set -e
 [ "${GAMING:-0}" = 1 ] || { echo "non-gaming edition; skipping i386/steam"; exit 0; }
 
 dpkg --add-architecture i386
-apt-get update
+# Tolerate a flaky third-party mirror (e.g. Kali): this hook only needs
+# Debian's i386 indices, which apt still refreshes even if another source
+# fails. A real total-network failure surfaces at the install step below.
+apt-get update || echo "WARNING: apt-get update had errors — continuing with available indices"
 
 PKGS="steam-installer libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 libvulkan1:i386 mangohud:i386"
 # nvidia 32-bit libs only when the proprietary driver is present (nvidia variant)

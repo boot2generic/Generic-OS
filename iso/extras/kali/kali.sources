@@ -3,8 +3,13 @@
 # stored at /etc/apt/keyrings/kali-archive-keyring.gpg. Pinned low (see
 # kali-pin.pref) so Debian always wins and `apt install <tool>` pulls
 # Kali-only tools on demand without dragging in Kali's rolling base.
+#
+# URI is kali.download (Kali's Cloudflare CDN) rather than http.kali.org —
+# the latter is a MirrorBrain redirector that sometimes hands out unreachable
+# community mirrors, which aborted apt-get update mid-build. Repo is signed,
+# so http is integrity-safe.
 Types: deb
-URIs: http://http.kali.org/kali
+URIs: http://kali.download/kali
 Suites: kali-rolling
 Components: main contrib non-free non-free-firmware
 Signed-By: /etc/apt/keyrings/kali-archive-keyring.gpg
