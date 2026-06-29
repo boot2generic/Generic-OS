@@ -10,8 +10,31 @@
 # off for a deterministic deploy; the NVIDIA Wayland env is baked separately
 # (config/system/etc/environment.d + the 0600 hook for the nvidia variant).
 set -e
+# Pre-create skel XDG dirs. local_setup.sh's deploy_templated_file treats any
+# dest under /etc as a system path (plain `install`, no -D / no parent
+# creation); with HOME=/etc/skel that misfires for the autostart and
+# applications dirs, so create them up front (conky.desktop etc.).
+runuser -u lbbuild -- mkdir -p \
+  /etc/skel/.config/autostart \
+  /etc/skel/.local/share/applications \
+  /etc/skel/.local/bin \
+  /etc/skel/.cache
+
+# deploy's final steps reload KWin rules / relaunch conky over D-Bus — those
+# return non-zero in the chroot (no running session), so deploy can exit 1 even
+# though every config was written. Don't let that abort the build; instead
+# verify the essential artifacts actually landed and hard-fail only if not.
 runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
-  /opt/dotfiles/local_setup.sh deploy --plasma --no-gpu
+  /opt/dotfiles/local_setup.sh deploy --plasma --no-gpu || true
+
+missing=0
+for f in /etc/skel/.zshrc \
+         /etc/skel/.config/kdeglobals \
+         /etc/skel/.config/autostart/conky.desktop \
+         /etc/skel/.config/alacritty/alacritty.toml; do
+  [ -e "$f" ] || { echo "FATAL: deploy did not produce $f"; missing=1; }
+done
+[ "$missing" = 0 ] || exit 1
 
 # Default shell = zsh for accounts created from skel.
 sed -i 's#^\(SHELL=\).*#\1/usr/bin/zsh#' /etc/default/useradd 2>/dev/null || true
