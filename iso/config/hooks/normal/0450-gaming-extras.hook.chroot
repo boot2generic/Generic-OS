@@ -12,7 +12,7 @@ set -e
 [ "${GAMING:-0}" = 1 ] || { echo "non-gaming edition; skipping gaming extras"; exit 0; }
 
 if [ "${BACKPORTS:-0}" = 1 ]; then
-  apt-get update
+  apt-get update || echo "WARNING: apt-get update failed — continuing"
   if apt-get install -y --no-install-recommends -t "${SUITE:-trixie}-backports" gamescope; then
     apt-mark manual gamescope 2>/dev/null || true
   else

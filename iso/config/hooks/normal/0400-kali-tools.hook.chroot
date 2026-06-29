@@ -11,7 +11,7 @@ set -e
 PKGS=$(grep -vE '^\s*#' /etc/dotfiles-kali-tools.list | grep -vE '^\s*$' | tr '\n' ' ')
 [ -n "$PKGS" ] || exit 0
 
-apt-get update
+apt-get update || echo "WARNING: apt-get update failed — installing from cached indices"
 # Best-effort per-tool so one unavailable package doesn't fail the whole build.
 for p in $PKGS; do
   if apt-get install -y --no-install-recommends "$p"; then
