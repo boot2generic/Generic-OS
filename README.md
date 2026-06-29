@@ -58,6 +58,18 @@ git submodule update --init --remote dotfiles
 ```
 
 ## Build
+**Containerized (recommended)** — keeps the host clean; only a container runtime is
+needed (the script installs `podman` if missing). Builds a Debian-trixie image with
+the full live-build toolchain, runs the build in a `--privileged --rm` container, and
+drops ISOs in `iso/out/`:
+```bash
+cd iso
+sudo ./container-build.sh                 # all editions → iso/out/*.iso
+sudo ./container-build.sh security        # one edition
+sudo ./container-build.sh clean           # remove container(s), image, build artifacts
+```
+
+**On-host** — runs live-build directly (host needs `live-build rsync gpg curl`):
 ```bash
 cd iso
 sudo ./build.sh                 # all editions in $EDITIONS → iso/out/*.iso
@@ -66,7 +78,7 @@ sudo ./build.sh clean           # reset the build tree
 ```
 Output: `iso/out/<suite>-<edition>-<variant>.iso`. Each build **auto-pulls the
 latest dotfiles** first (submodule tracks `main`); build from the pinned checkout
-with `NO_UPDATE_DOTFILES=1 sudo ./build.sh`.
+with `NO_UPDATE_DOTFILES=1 sudo ./…`.
 
 ## Update the dotfiles
 Edit + push in the `dotfiles/` submodule (it's the real `boot2generic/dotfiles`

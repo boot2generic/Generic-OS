@@ -11,17 +11,25 @@ latest software; the resulting ISOs **install with zero internet**.
 - **Installer:** Calamares (clones the live squashfs to disk → offline install).
 
 ## Quick start
+**Containerized (recommended)** — host only needs a container runtime (auto-installs
+`podman` if absent); the live-build toolchain lives in the image:
 ```bash
-sudo apt install live-build rsync gpg curl    # on a trixie host
 cd iso
-sudo ./build.sh                # build every edition in $EDITIONS → out/*.iso
-sudo ./build.sh security       # build just one edition (all its variants)
+sudo ./container-build.sh             # build every edition → out/*.iso
+sudo ./container-build.sh security    # one edition
+sudo ./container-build.sh clean       # remove container(s), image, build artifacts
+```
+**On-host** (runs live-build directly):
+```bash
+sudo apt install live-build rsync gpg curl    # trixie host
+sudo ./build.sh                # every edition in $EDITIONS → out/*.iso
+sudo ./build.sh security       # one edition
 ```
 Default build produces 5 ISOs: `everything`×{universal,nvidia}, `security`×{universal},
 `gaming`×{universal,nvidia}. Output: `out/<suite>-<edition>-<variant>.iso`.
 
 Update the desktop: edit anything under `../config/` or `../config/apps/apps.toml`,
-then re-run `sudo ./build.sh`.
+then re-run the build.
 
 ## Editions
 | Edition | Stacks | Kali repo | Kali tools baked | App tiers | Variants |
@@ -42,6 +50,7 @@ listing it in `EDITIONS` (config.env). See [`docs/DEVELOPER.md`](docs/DEVELOPER.
 |------|---------|
 | `config.env` | Build parameters (suite, arch, editions list, Kali key pin). |
 | `editions/*.env` | Declarative edition definitions (stacks, tiers, Kali, variants). |
+| `container-build.sh` | Containerized build (recommended): trixie+live-build image → runs `build.sh` in a `--privileged --rm` container; `clean` removes container/image/artifacts. |
 | `build.sh` | Orchestrator: per edition×variant → sync → stage → `lb config`/`build`. |
 | `auto/` | live-build `lb config/build/clean` steps. |
 | `config/package-lists/*.list.chroot` | Always-on package sets (base, plasma, universal GPU). |

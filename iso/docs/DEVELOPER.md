@@ -86,8 +86,19 @@ Change `DEBIAN_SUITE` in `config.env`, then `sudo ./build.sh clean`. Re-pin apps
 the new suite (`../scripts/refresh-pins.sh`) and verify any deb822 `.sources` under
 `../config/system/etc/apt` that hardcode a codename.
 
+## Containerized build
+`container-build.sh` builds a `debian:trixie` image (inline Containerfile) with the
+live-build toolchain, bind-mounts the project at `/project`, and runs `./build.sh` in a
+`--privileged --rm` container — so the host needs only podman/docker (auto-installed)
+and the toolchain/version is reproducible regardless of host. `--privileged` is required
+(live-build does mount/debootstrap/loop). Inside the container there's no `$SUDO_USER`,
+so the dotfiles pull runs as root over HTTPS with `safe.directory '*'` (set in the
+image). ISOs land in the bind-mounted `out/` and are chowned back to the invoker.
+`container-build.sh clean` removes the container(s), image, and host build artifacts.
+Note: this does NOT change package availability — same trixie repos as an on-host build.
+
 ## Gotchas
-- Build on a host matching `DEBIAN_SUITE` (index/dep parity).
+- Build on a host matching `DEBIAN_SUITE` (or use `container-build.sh`, which pins it).
 - **Validate package availability with `./check-packages.sh` before building** — it
   checks every list package has a real install *Candidate* (`apt-cache show` is NOT
   enough; it succeeds for uninstallable packages and will let a build fail late).
