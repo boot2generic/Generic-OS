@@ -21,5 +21,8 @@ if dpkg -s nvidia-driver >/dev/null 2>&1; then
   PKGS="$PKGS nvidia-driver-libs:i386"
 fi
 
-apt-get install -y --no-install-recommends $PKGS
+# Best-effort: a transient failure here shouldn't abort a long build. Steam can
+# also be installed post-boot. A real i386/dep problem still shows in the log.
+apt-get install -y --no-install-recommends $PKGS \
+  || echo "WARNING: i386/steam install had errors — some gaming bits may be missing"
 apt-mark manual $PKGS 2>/dev/null || true
