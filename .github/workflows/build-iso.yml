@@ -85,10 +85,11 @@ jobs:
           path: iso/build.log
           if-no-files-found: ignore
 
-  # On a tag, attach the ISOs + checksums to a GitHub Release.
-  # NOTE: GitHub caps release assets at ~2 GiB; editions larger than that will
-  # be skipped here — grab them from the build job's Artifacts instead (or use
-  # a self-hosted runner publishing to your own storage).
+  # On a tag, attach the ISOs + checksums to a GitHub Release. GitHub caps each
+  # release asset at 2 GiB (but allows many assets, unlimited total size + free
+  # downloads), so ISOs >2 GiB are split into <2 GiB parts; users reassemble
+  # them with `cat` (instructions go in the release notes). Fully free, no
+  # external host. SHA256SUMS.txt verifies the *reassembled* ISO.
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
@@ -98,20 +99,40 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Combined checksums
-        run: cd dist && cat SHA256SUMS-*.txt > SHA256SUMS.txt 2>/dev/null || true
-      - name: Publish release (best-effort per asset)
+      - name: Split oversized ISOs (>1.9 GiB) into parts
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt 2>/dev/null || true
+          limit=$((1900*1024*1024))                   # keep parts safely under GitHub's 2 GiB cap
+          for iso in *.iso; do
+            [ -f "$iso" ] || continue
+            if [ "$(stat -c%s "$iso")" -ge "$limit" ]; then
+              echo "splitting $iso ($(du -h "$iso" | cut -f1)) into 1900M parts"
+              split -b 1900M -d --suffix-length=2 "$iso" "$iso.part"
+              rm -f "$iso"                             # upload parts instead of the whole file
+            fi
+          done
+          ls -lh
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          {
+            printf 'Generic-OS ISOs (built by CI).\n\n'
+            printf 'Verify: `sha256sum -c SHA256SUMS.txt`\n\n'
+            printf 'ISOs over 2 GiB are uploaded as split parts (NAME.iso.part00, .part01, ...).\n'
+            printf 'Reassemble before use:\n\n'
+            printf '    cat NAME.iso.part* > NAME.iso\n'
+            printf '    sha256sum -c SHA256SUMS.txt\n\n'
+            printf 'Smaller ISOs are attached whole.\n'
+          } > notes.md
           gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$REPO" --title "Generic-OS $TAG" \
-                 --notes "Generic-OS ISOs built from $TAG. Assets >2 GiB are not attached here — download them from the workflow run's Artifacts."
-          for f in dist/SHA256SUMS.txt dist/*.iso; do
-            [ -f "$f" ] || continue
-            echo "uploading $f ($(du -h "$f" | cut -f1))"
+            || gh release create "$TAG" --repo "$REPO" --title "Generic-OS $TAG" --notes-file notes.md
+          shopt -s nullglob
+          for f in dist/SHA256SUMS.txt dist/*.iso dist/*.iso.part*; do
+            echo "uploading $(basename "$f") ($(du -h "$f" | cut -f1))"
             gh release upload "$TAG" "$f" --repo "$REPO" --clobber \
-              || echo "::warning::failed to attach $f (likely >2 GiB release-asset limit) — use the Artifacts"
+              || echo "::warning::failed to attach $f"
           done

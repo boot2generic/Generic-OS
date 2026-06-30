@@ -91,11 +91,17 @@ dotfiles commit in this project: `git add dotfiles && git commit -m "bump dotfil
 ```bash
 git tag v1.0.0 && git push origin v1.0.0      # or run it manually from the Actions tab
 ```
-ISOs are uploaded as **workflow artifacts** (reliable for any size) and, on a tag,
-attached to a **GitHub Release**. Caveat: GitHub caps release assets at ~2 GiB, so
-larger editions are only available as artifacts — for big public releases, use a
-self-hosted runner publishing to your own storage. To build on every push to `main`
-instead of only tags, add `branches: [ main ]` under `on.push` in the workflow.
+**Fully free**, GitHub-only:
+- **Public repo** → unlimited free Actions build minutes (private repos get 2000 min/mo,
+  which these multi-hour builds burn through fast — make it public).
+- ISOs upload as **workflow artifacts** and, on a tag, attach to a **GitHub Release**
+  (free, permanent, unlimited downloads). GitHub caps release assets at 2 GiB, so the
+  workflow **splits larger ISOs into `<name>.iso.part00/01/…`**; reassemble with
+  `cat NAME.iso.part* > NAME.iso` then `sha256sum -c SHA256SUMS.txt`.
+
+To build on every push to `main` instead of only tags, add `branches: [ main ]` under
+`on.push`. (Alternatives if you dislike split files: the Internet Archive hosts open-source
+ISOs free, or a self-hosted runner publishing to your own storage — both need an extra account/secret.)
 
 ## To Debian 14 later
 Change `DEBIAN_SUITE` in `iso/config.env`, then `sudo ./iso/build.sh clean` and rebuild.
