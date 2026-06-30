@@ -85,24 +85,6 @@ Edit + push in the `dotfiles/` submodule (it's the real `boot2generic/dotfiles`
 checkout), then rebuild — the next build pulls your changes. To record the new
 dotfiles commit in this project: `git add dotfiles && git commit -m "bump dotfiles"`.
 
-## CI: build a release on a tag
-`.github/workflows/build-iso.yml` builds every edition in parallel (matrix from
-`config.env`) and publishes the ISOs. Push a version tag to trigger it:
-```bash
-git tag v1.0.0 && git push origin v1.0.0      # or run it manually from the Actions tab
-```
-**Fully free**, GitHub-only:
-- **Public repo** → unlimited free Actions build minutes (private repos get 2000 min/mo,
-  which these multi-hour builds burn through fast — make it public).
-- ISOs upload as **workflow artifacts** and, on a tag, attach to a **GitHub Release**
-  (free, permanent, unlimited downloads). GitHub caps release assets at 2 GiB, so the
-  workflow **splits larger ISOs into `<name>.iso.part00/01/…`**; reassemble with
-  `cat NAME.iso.part* > NAME.iso` then `sha256sum -c SHA256SUMS.txt`.
-
-To build on every push to `main` instead of only tags, add `branches: [ main ]` under
-`on.push`. (Alternatives if you dislike split files: the Internet Archive hosts open-source
-ISOs free, or a self-hosted runner publishing to your own storage — both need an extra account/secret.)
-
 ## To Debian 14 later
 Change `DEBIAN_SUITE` in `iso/config.env`, then `sudo ./iso/build.sh clean` and rebuild.
 
