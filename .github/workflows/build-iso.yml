@@ -1,0 +1,117 @@
+name: Build Generic-OS ISOs
+
+# Builds every edition (matrix from iso/config.env) in parallel and publishes
+# the ISOs. Triggers on a version tag (the "release" flow) and on manual
+# dispatch. Each run builds several multi-GB ISOs (~1-3h each, cold), so it is
+# intentionally NOT wired to every commit — to do that, add:
+#     branches: [ main ]
+# under `on.push` below.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write          # create the GitHub Release on tags
+
+concurrency:
+  group: build-iso-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Read EDITIONS from iso/config.env so it stays the single source of truth.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      editions: ${{ steps.m.outputs.editions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: m
+        run: |
+          . iso/config.env
+          echo "editions=$(printf '%s\n' $EDITIONS | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 330               # under the 6h hosted-runner cap
+    strategy:
+      fail-fast: false                 # one edition failing shouldn't kill the rest
+      matrix:
+        edition: ${{ fromJson(needs.prepare.outputs.editions) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive        # pull the dotfiles submodule
+
+      - name: Free disk space
+        run: |
+          # Hosted runners only have ~14G free on /; reclaim ~30G for the chroot+ISOs.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          sudo docker image prune -af 2>/dev/null || true
+          df -h /
+
+      - name: Build ${{ matrix.edition }}
+        env:
+          NO_UPDATE_DOTFILES: "1"      # build the pinned submodule commit (reproducible release)
+        run: |
+          cd iso
+          sudo -E ./container-build.sh "${{ matrix.edition }}"
+
+      - name: Checksums
+        run: |
+          cd iso/out
+          sha256sum *.iso | tee "SHA256SUMS-${{ matrix.edition }}.txt"
+          ls -lh
+
+      - name: Upload ISOs (workflow artifacts — reliable for any size)
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-os-${{ matrix.edition }}
+          path: |
+            iso/out/*.iso
+            iso/out/SHA256SUMS-*.txt
+          if-no-files-found: error
+          compression-level: 0         # ISOs are already compressed
+          retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.edition }}
+          path: iso/build.log
+          if-no-files-found: ignore
+
+  # On a tag, attach the ISOs + checksums to a GitHub Release.
+  # NOTE: GitHub caps release assets at ~2 GiB; editions larger than that will
+  # be skipped here — grab them from the build job's Artifacts instead (or use
+  # a self-hosted runner publishing to your own storage).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Combined checksums
+        run: cd dist && cat SHA256SUMS-*.txt > SHA256SUMS.txt 2>/dev/null || true
+      - name: Publish release (best-effort per asset)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$REPO" --title "Generic-OS $TAG" \
+                 --notes "Generic-OS ISOs built from $TAG. Assets >2 GiB are not attached here — download them from the workflow run's Artifacts."
+          for f in dist/SHA256SUMS.txt dist/*.iso; do
+            [ -f "$f" ] || continue
+            echo "uploading $f ($(du -h "$f" | cut -f1))"
+            gh release upload "$TAG" "$f" --repo "$REPO" --clobber \
+              || echo "::warning::failed to attach $f (likely >2 GiB release-asset limit) — use the Artifacts"
+          done
