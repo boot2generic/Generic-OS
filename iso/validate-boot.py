@@ -17,12 +17,12 @@ def log(m): print(m, flush=True)
 class JsonSock:
     """Line-delimited JSON over a unix socket (QMP and QGA both speak this)."""
     def __init__(self, path): self.path, self.s, self.buf = path, None, b""
-    def connect(self, timeout):
+    def connect(self, timeout, recv_timeout=60):
         end = time.time() + timeout
         while time.time() < end:
             try:
                 s = socket.socket(socket.AF_UNIX); s.connect(self.path)
-                s.settimeout(60); self.s = s; return True
+                s.settimeout(recv_timeout); self.s = s; return True
             except OSError:
                 time.sleep(0.5)
         return False
@@ -112,19 +112,20 @@ def main():
         qmp._readline(); qmp.cmd("qmp_capabilities")            # greeting, then negotiate
 
         # Wait for the guest agent = the guest booted far enough to talk back.
-        qga = JsonSock(qga_s); qga.connect(10)
+        qga = JsonSock(qga_s); qga.connect(10, recv_timeout=8)   # short: poll must stay responsive
         log(f"  waiting up to {a.boot_timeout}s for the guest agent…")
         end = time.time() + a.boot_timeout; up = False
         while time.time() < end:
             try:
                 if "return" in qga.cmd("guest-ping"): up = True; break
-            except (OSError, EOFError): qga = JsonSock(qga_s); qga.connect(5)
+            except (OSError, EOFError): qga = JsonSock(qga_s); qga.connect(5, recv_timeout=8)
             time.sleep(3)
         if not up:
             emit("FAIL", "guest agent never responded — VM didn't boot or agent absent (rebuild with qemu-guest-agent)")
             qmp.cmd("screendump", {"filename": os.path.abspath(f"{a.out}/{name}.boot.png"), "format": "png"})
             return
         emit("PASS", "guest booted (agent responding)")
+        qga.s.settimeout(45)   # roomier now that the agent is live (guest-exec replies)
 
         # Wait for the Plasma desktop (autologin), then let it settle + conky autostart.
         log(f"  waiting up to {a.desktop_timeout}s for the Plasma desktop…")
