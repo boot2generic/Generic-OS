@@ -12,10 +12,19 @@
 set -uo pipefail
 cd "$(dirname "$0")" || exit 2
 
+# Tee everything to a log so results can be shared/reviewed. Colors are only
+# emitted to an interactive terminal, so the log file stays clean plain text.
+LOGFILE="${VALIDATE_LOG:-validate.log}"
+exec > >(tee "$LOGFILE") 2>&1
+echo "Generic-OS ISO validation — $(date)"
+echo "(full log: $(pwd)/$LOGFILE)"
+
+if [ -t 1 ]; then C_G=$'\033[1;32m'; C_R=$'\033[1;31m'; C_Y=$'\033[1;33m'; C_0=$'\033[0m'
+else C_G=; C_R=; C_Y=; C_0=; fi
 PASS=0; FAIL=0; WARN=0
-p(){ printf '  \033[1;32m[PASS]\033[0m %s\n' "$*"; PASS=$((PASS+1)); }
-f(){ printf '  \033[1;31m[FAIL]\033[0m %s\n' "$*"; FAIL=$((FAIL+1)); }
-w(){ printf '  \033[1;33m[WARN]\033[0m %s\n' "$*"; WARN=$((WARN+1)); }
+p(){ printf '  %s[PASS]%s %s\n' "$C_G" "$C_0" "$*"; PASS=$((PASS+1)); }
+f(){ printf '  %s[FAIL]%s %s\n' "$C_R" "$C_0" "$*"; FAIL=$((FAIL+1)); }
+w(){ printf '  %s[WARN]%s %s\n' "$C_Y" "$C_0" "$*"; WARN=$((WARN+1)); }
 have(){ command -v "$1" >/dev/null 2>&1; }
 
 # Is package $2 installed in the squashfs rooted at $1 ? -> prints y/n
@@ -25,8 +34,10 @@ pkg_ok(){
       if(p){ found=1; print (i?"y":"n"); exit } }
     END{ if(!found) print "n" }' "$1/var/lib/dpkg/status" 2>/dev/null
 }
-chk_pkg(){  # $1=root $2=pkg  [$3=label]
+chk_pkg(){  # $1=root $2=pkg  [$3=label]  — required (FAIL if missing)
   [ "$(pkg_ok "$1" "$2")" = y ] && p "package installed: ${3:-$2}" || f "package MISSING: ${3:-$2}"; }
+chk_pkg_opt(){  # best-effort install (Kali tools / Steam hook): WARN, not FAIL
+  [ "$(pkg_ok "$1" "$2")" = y ] && p "package installed: ${3:-$2}" || w "best-effort package not installed: ${3:-$2} (install on demand later)"; }
 chk_file(){ [ -s "$1/$2" ] && p "present: /$2"        || f "MISSING/empty: /$2"; }
 chk_absent(){ [ ! -e "$1/$2" ] && p "removed (build-only): /$2" || f "should NOT be on image: /$2"; }
 chk_grep(){ grep -q "$3" "$1/$2" 2>/dev/null && p "$2 contains '$3'" || f "$2 missing '$3'"; }
@@ -76,11 +87,12 @@ content(){  # $1=iso $2=edition $3=variant
     chk_file "$sq" etc/apt/sources.list.d/kali.sources
     chk_pkg "$sq" nmap; chk_pkg "$sq" wireshark ;;
   esac
-  [ "$ed" = security ] && chk_pkg "$sq" metasploit-framework "Kali: metasploit (baked tools)"
+  [ "$ed" = security ] && chk_pkg_opt "$sq" metasploit-framework "Kali: metasploit (baked, best-effort)"
 
-  # --- gaming / everything ---
+  # --- gaming / everything ---  (mangohud is a list package = required;
+  #  steam-installer is installed by the 0100 hook = best-effort)
   case "$ed" in gaming|everything)
-    chk_pkg "$sq" steam-installer "Steam"; chk_pkg "$sq" mangohud ;;
+    chk_pkg_opt "$sq" steam-installer "Steam"; chk_pkg "$sq" mangohud ;;
   esac
 
   # --- nvidia variant ---
