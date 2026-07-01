@@ -51,5 +51,8 @@ qdbus-qt6
 # Wallpaper generator (Pillow) + dbus bindings used by the deploy step.
 python3-pil
 python3-dbus
+# conky system-monitor overlay — the dotfiles deploy an autostart entry + config
+# for it, so the binary must be present or the desktop starts without conky.
+conky-all
 alacritty
 firefox-esr

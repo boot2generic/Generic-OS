@@ -167,10 +167,17 @@ def main():
         check(bool(qga_run(qga, f"ls {home}/.config/autostart/conky.desktop 2>/dev/null")[1].strip()),
               "autostart entry present: conky.desktop",
               "autostart/conky.desktop missing in home")
+        check(bool(qga_run(qga, "command -v conky")[1].strip()),
+              "conky binary installed", "conky binary NOT installed (add conky-all)")
+        check(bool(qga_run(qga, f"test -s {home}/.config/wallpaper/wallpaper.png && echo y")[1].strip()),
+              "wallpaper image present (~/.config/wallpaper/wallpaper.png)",
+              "wallpaper.png missing/empty in home (generator/download failed)")
 
-        # apps per edition (which/pgrep) — best-effort where the build is best-effort
+        # apps per edition. Use a full PATH so /usr/games binaries (e.g. steam)
+        # aren't false-negatives against the guest agent's minimal PATH.
+        FULLPATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games"
         def app(bin_, required=True):
-            ok_ = bool(qga_run(qga, f"command -v {bin_}")[1].strip())
+            ok_ = bool(qga_run(qga, f"PATH={FULLPATH} command -v {bin_}")[1].strip())
             emit("PASS" if ok_ else ("FAIL" if required else "WARN"),
                  f"app available: {bin_}" if ok_ else f"app missing: {bin_}")
         for b in ("plasmashell", "konsole", "alacritty", "nvim", "tmux", "zsh", "calamares"): app(b)
