@@ -29,6 +29,7 @@ locales
 sudo
 procps
 e2fsprogs
+qemu-guest-agent
 network-manager
 tlp
 thermald

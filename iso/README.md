@@ -47,15 +47,26 @@ Edit an edition, or add a new one, by editing/creating `editions/<name>.env` and
 listing it in `EDITIONS` (config.env). See [`docs/DEVELOPER.md`](docs/DEVELOPER.md).
 
 ## Validate built ISOs
+**On-disk (fast, no boot)** — structure + squashfs contents:
 ```bash
-sudo ./validate-iso.sh              # all iso/out/*.iso: structure + squashfs contents
-./validate-iso.sh --boot out/trixie-gaming-universal.iso   # then boot it in QEMU
+sudo ./validate-iso.sh              # all iso/out/*.iso
 ```
 Structural checks (ISO 9660, bootable, El Torito) need no root; content checks
 mount the squashfs (need `sudo`) and confirm each edition has the right software
-(Plasma, zsh/nvim, Calamares, Kali repo/tools, Steam, NVIDIA driver, themed
-`/etc/skel`) and that build-only cruft was removed. `--boot` launches QEMU
-offline to eyeball the live desktop + Calamares.
+(Plasma, zsh/nvim, Calamares, **grub bootloader**, Kali repo/tools, Steam, NVIDIA
+driver, themed `/etc/skel`) and that build-only cruft was removed.
+
+**Runtime (boots each ISO in QEMU)** — proves the desktop is actually wired up:
+```bash
+./validate-boot.sh                  # boots each ISO, screenshots + in-guest checks
+```
+Needs QEMU + `/dev/kvm` (be in the `kvm` group or use sudo). For every ISO it
+boots the live session, saves a **screenshot** of the running desktop, and via
+the guest agent checks that **conky is running**, the **cyberpunk theme is
+applied**, dotfiles landed in the live user's home (`~/.zshrc`,
+`~/.config/kdeglobals`, `autostart/conky.desktop`), and apps launch. Artifacts
+(`<name>.png` + `<name>.report.txt`) land in `out/boot-validate/`. Requires ISOs
+built from current source (they add `qemu-guest-agent` + live autologin).
 
 ## Docs
 - [`docs/USER.md`](docs/USER.md) — install from the ISO and what you get.
