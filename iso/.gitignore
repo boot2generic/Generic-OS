@@ -12,6 +12,7 @@
 !/build.sh
 !/container-build.sh
 !/check-packages.sh
+!/validate-iso.sh
 !/make-kali-key.sh
 !/auto/
 !/docs/
