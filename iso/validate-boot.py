@@ -80,9 +80,22 @@ def main():
 
     tmp = tempfile.mkdtemp(prefix="genos-boot-"); qmp_s = f"{tmp}/qmp"; qga_s = f"{tmp}/qga"
     accel = "kvm" if os.path.exists("/dev/kvm") else "tcg"
+
+    # The ISO's boot menu has `timeout 0` (waits forever for a keypress), so we
+    # boot the kernel+initrd DIRECTLY (extracted from the ISO) — deterministic,
+    # no menu. The ISO is still attached as a cdrom so live-boot finds the
+    # squashfs medium; console=ttyS0 mirrors kernel logs to the serial file.
+    log("  extracting kernel + initrd from ISO…")
+    if subprocess.run(["xorriso", "-osirrox", "on", "-indev", a.iso,
+                       "-extract", "/live/vmlinuz", f"{tmp}/vmlinuz",
+                       "-extract", "/live/initrd.img", f"{tmp}/initrd.img"],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+        emit("FAIL", "could not extract /live/vmlinuz + /live/initrd.img (need xorriso; valid ISO?)"); return
     qemu = [
         "qemu-system-x86_64", "-machine", f"accel={accel}", "-m", a.mem, "-smp", a.cpus,
-        "-cdrom", a.iso, "-boot", "d", "-vga", "virtio", "-display", "none",
+        "-kernel", f"{tmp}/vmlinuz", "-initrd", f"{tmp}/initrd.img",
+        "-append", "boot=live components quiet console=ttyS0",
+        "-cdrom", a.iso, "-vga", "virtio", "-display", "none",
         "-qmp", f"unix:{qmp_s},server=on,wait=off",
         "-chardev", f"socket,path={qga_s},server=on,wait=off,id=qga0",
         "-device", "virtio-serial", "-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",
@@ -97,14 +110,6 @@ def main():
         qmp = JsonSock(qmp_s)
         if not qmp.connect(30): emit("FAIL", "QMP socket never came up (QEMU failed to start)"); return
         qmp._readline(); qmp.cmd("qmp_capabilities")            # greeting, then negotiate
-
-        # The live ISO shows a boot menu that waits for input under QEMU — press
-        # ENTER a few times over the first ~16s to boot the default (Live) entry.
-        log("  dismissing boot menu (ENTER)…")
-        for _ in range(5):
-            try: qmp.cmd("sendkey", {"keys": [{"type": "qcode", "data": "ret"}]})
-            except Exception: pass
-            time.sleep(4)
 
         # Wait for the guest agent = the guest booted far enough to talk back.
         qga = JsonSock(qga_s); qga.connect(10)

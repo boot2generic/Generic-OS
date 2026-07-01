@@ -1,0 +1,17 @@
+#!/bin/sh
+# Autologin the live session straight to the themed Plasma desktop (so users —
+# and the boot-validation harness — reach the desktop without a password they
+# don't have). live-config creates the live user 'user'; SDDM autologins it.
+#
+# Harmless on an INSTALLED system: Calamares creates a different user, so
+# 'User=user' matches nothing there and SDDM just shows the normal greeter.
+set -e
+mkdir -p /etc/sddm.conf.d
+cat > /etc/sddm.conf.d/zz-live-autologin.conf <<'EOF'
+# Live-session autologin (see 0800-live-autologin.hook.chroot). No-op once
+# installed (the live user 'user' does not exist on the target).
+[Autologin]
+User=user
+Session=plasma
+Relogin=false
+EOF

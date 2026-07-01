@@ -18,6 +18,7 @@ LOG="$OUT/boot-validate.log"; exec > >(tee "$LOG") 2>&1
 
 command -v qemu-system-x86_64 >/dev/null || { echo "need qemu: sudo apt install qemu-system-x86"; exit 1; }
 command -v python3 >/dev/null           || { echo "need python3"; exit 1; }
+command -v xorriso >/dev/null            || { echo "need xorriso: sudo apt install xorriso"; exit 1; }
 [ -r /dev/kvm ] || echo "WARN: /dev/kvm not accessible — boots will be very slow (TCG). Add yourself to the 'kvm' group or use sudo."
 
 isos=("$@"); [ "${#isos[@]}" -gt 0 ] || isos=(out/*.iso)
