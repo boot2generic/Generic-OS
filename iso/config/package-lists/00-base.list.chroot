@@ -4,6 +4,19 @@ live-config
 live-config-systemd
 calamares
 calamares-settings-debian
+# Bootloader + installer support — REQUIRED in the squashfs so Calamares can
+# install a BOOTABLE system on the target (BIOS + UEFI/Secure Boot) and format
+# the ESP / offer LUKS+LVM. Without these the installed disk won't boot.
+grub-efi-amd64-signed
+grub-pc-bin
+grub2-common
+shim-signed
+efibootmgr
+dosfstools
+cryptsetup
+cryptsetup-initramfs
+lvm2
+os-prober
 linux-image-amd64
 linux-headers-amd64
 dkms

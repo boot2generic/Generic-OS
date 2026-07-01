@@ -99,6 +99,11 @@ Note: this does NOT change package availability — same trixie repos as an on-h
 
 ## Gotchas
 - Build on a host matching `DEBIAN_SUITE` (or use `container-build.sh`, which pins it).
+- **The squashfs must contain grub** (`grub-efi-amd64-signed`, `grub-pc-bin`, `grub2-common`,
+  `shim-signed`, `efibootmgr` in `00-base`). The *live ISO* boots via live-build's own loader,
+  but **Calamares installs the target's bootloader from packages in the squashfs** — without
+  them the installed disk is unbootable (and `/etc/default/grub`, the NVIDIA-cmdline target,
+  won't exist). `validate-iso.sh` checks this.
 - **Validate package availability with `./check-packages.sh` before building** — it
   checks every list package has a real install *Candidate* (`apt-cache show` is NOT
   enough; it succeeds for uninstallable packages and will let a build fail late).

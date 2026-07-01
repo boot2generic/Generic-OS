@@ -8,8 +8,15 @@ set -e
 dpkg -s nvidia-driver >/dev/null 2>&1 || { echo "no nvidia-driver; skip"; exit 0; }
 
 grub=/etc/default/grub
-if [ -f "$grub" ] && ! grep -q 'nvidia-drm.modeset=1' "$grub"; then
-  sed -i -E 's/^(GRUB_CMDLINE_LINUX_DEFAULT=")([^"]*)"/\1\2 nvidia-drm.modeset=1 nvidia-drm.fbdev=1"/' "$grub"
+# grub2-common is now in the base list, so /etc/default/grub exists (its
+# conffile). Append the NVIDIA cmdline; if the DEFAULT line is somehow absent
+# or the file is missing, create it so update-grub on the target picks it up.
+if ! grep -q 'nvidia-drm.modeset=1' "$grub" 2>/dev/null; then
+  if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "$grub" 2>/dev/null; then
+    sed -i -E 's/^(GRUB_CMDLINE_LINUX_DEFAULT=")([^"]*)"/\1\2 nvidia-drm.modeset=1 nvidia-drm.fbdev=1"/' "$grub"
+  else
+    echo 'GRUB_CMDLINE_LINUX_DEFAULT="quiet nvidia-drm.modeset=1 nvidia-drm.fbdev=1"' >> "$grub"
+  fi
 fi
 
 mods=/etc/initramfs-tools/modules
