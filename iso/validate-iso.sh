@@ -71,6 +71,14 @@ content(){  # $1=iso $2=edition $3=variant
   chk_pkg "$sq" plasma-desktop "Plasma desktop"
   chk_pkg "$sq" sddm; chk_pkg "$sq" zsh; chk_pkg "$sq" tmux; chk_pkg "$sq" neovim
   chk_pkg "$sq" alacritty; chk_pkg "$sq" calamares "Calamares installer"
+  # Installability: Calamares installs the target's bootloader using grub
+  # packages from THIS squashfs. If they're absent, the installed system won't
+  # boot (and /etc/default/grub — the NVIDIA cmdline target — won't exist).
+  chk_pkg "$sq" grub2-common "grub2-common (update-grub for the install)"
+  { [ "$(pkg_ok "$sq" grub-efi-amd64)" = y ] || [ "$(pkg_ok "$sq" grub-efi-amd64-bin)" = y ]; } \
+    && p "grub-efi-amd64 present (UEFI target bootloader)" \
+    || w "grub-efi-amd64 absent — UEFI installs may not get a bootloader"
+  chk_file "$sq" etc/default/grub
   chk_file "$sq" etc/skel/.zshrc
   chk_file "$sq" etc/skel/.config/kdeglobals
   chk_file "$sq" etc/skel/.config/autostart/conky.desktop      # regression guard (the old 0200 bug)
