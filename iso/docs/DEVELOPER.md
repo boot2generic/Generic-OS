@@ -69,6 +69,15 @@ restores skel ownership to root and deletes the user + sudoers drop-in.
 - **Add an edition:** create `editions/<name>.env`, add `<name>` to `EDITIONS` in `config.env`.
 - **Add a GPU variant:** add `variants/<name>/` lists and a branch in `build.sh`'s `stage_lists`.
 - **Curate Kali tools:** edit `extras/kali/kali-tools.list` (one package per line).
+- **Boot menu / bootloader tweaks:** per-file overlays in `config/bootloaders/<name>/`
+  replace live-build's templates. We override `isolinux/isolinux.cfg` (BIOS) and
+  `grub-pc/config.cfg` (UEFI — grub-efi reuses the grub-pc templates) to auto-boot
+  the live entry after **5s** instead of waiting forever, so headless/VM boots work.
+- **Branding:** the `0850-branding` hook suppresses KDE's Welcome Center via an
+  `Hidden=true` autostart override in `/etc/skel` and rebrands Calamares surfaces
+  ("Install Debian" launcher, `branding.desc` product names) to Generic OS.
+  `validate-iso.sh` guards both. The ISO volume ID is `GENOS_<EDITION>_<VAR>`
+  (uppercased/truncated in `auto/config` to satisfy ISO 9660/Joliet label rules).
 
 ## Kali repo (security & everything editions)
 - `make-kali-key.sh` downloads `archive-keyring.gpg` and **hard-fails unless the pinned
@@ -124,7 +133,47 @@ Note: this does NOT change package availability — same trixie repos as an on-h
   tools install at build time. `kali-rolling` is large — expect a slower `apt update`.
   Pin priority 100 prevents Kali from dragging its rolling base into the image.
 
+## Build speed
+A warm-cache build is ~19–25m per variant (measured on the i7-10610U build laptop:
+≈11.5m package install, ≈3.5m hooks, ≈3–4m squashfs zstd-12, ≈1m ISO). A *cold* build
+adds package **download** (~1.5–2 GB) — that download is the "~1 hour" case.
+
+**Throttling trap:** on a laptop, a power-limited/battery run can slow mksquashfs ~10×
+(one observed run: 32m for the squashfs stage alone; the same machine benchmarks
+zstd-12 at ~47 MB/s ≈ 4m when unthrottled). Build on AC with the performance profile,
+and expect back-to-back variants to run warmer/slower than the first.
+
+Two knobs cut it further:
+- **`FAST=1`** (or `SQUASHFS_LEVEL=3`) — drops squashfs to level 3 for dev iteration:
+  mksquashfs ~1m instead of ~4m, at the cost of a bigger ISO. An explicit `SQUASHFS_LEVEL`
+  always wins. Leave the default (12) for release ISOs.
+  `sudo FAST=1 ./container-build.sh gaming`
+- **`APT_PROXY`** (apt-cacher-ng) — reuse downloaded .debs across editions, rebuilds, and
+  `purge`, turning cold builds warm and fetching the shared base once for an all-editions
+  run. `sudo ./extras/apt-cacher.sh` installs+starts it and prints the value:
+  `sudo APT_PROXY=http://localhost:3142 ./container-build.sh` (auto-adds `--network host`).
+  `auto/config` drops the mirror to http so the cache can see the traffic — apt still
+  GPG-verifies every package, so integrity is unchanged.
+
+Put the knobs **after** `sudo` (`sudo FAST=1 …`), not before it: sudo's default
+`env_reset` strips variables set before `sudo`, so `FAST=1 sudo …` silently does
+nothing. Command-line assignments after `sudo` are passed through.
+
+The `cache/` dir already survives `clean` (only `purge` wipes it), so same-edition rebuilds
+are warm without a proxy. Recommends are intentionally left ON (Plasma relies on them); a
+`--apt-recommends false` pass would be the biggest further cut but needs functional testing.
+
 ## Verify a build
+Automated: `./validate-iso.sh` (structure; add `sudo` for content checks inside the
+squashfs) and `./validate-boot.sh` (boots each ISO in QEMU, screenshots the desktop,
+runs in-guest checks via the guest agent). Both warn when an ISO in `out/` predates a
+build-source change — rebuild before trusting FAILs. `validate-boot.py` boots the
+extracted kernel directly by default; pass `--firmware bios` or `--firmware uefi`
+(needs `ovmf`) to boot through the real bootloader + 5s menu auto-boot instead.
+CI (`.github/workflows/ci.yml`) shellchecks the scripts and verifies every package
+in the lists still has an install candidate on the target suite.
+
+Manual:
 1. `sudo ./build.sh security` → `out/trixie-security-universal.iso` (or `./build.sh` for all).
 2. Boot it in a VM with **networking disabled** (`qemu … -nic none`); confirm Plasma live
    session + Calamares launch.

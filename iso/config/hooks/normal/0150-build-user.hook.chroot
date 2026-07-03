@@ -5,8 +5,24 @@
 # user-side (non-sudo) deploys land there; 9999 reverts ownership + removes
 # the user.
 set -e
-id lbbuild >/dev/null 2>&1 || useradd -M -s /usr/bin/zsh lbbuild
+# Pinned high UID: without -u, lbbuild gets 1000 — the same UID as the typical
+# host user. The chroot shares the host PID namespace, so any UID-based signal
+# (pkill -u) would hit the host user's processes. 0900 kills by chroot-root
+# check as the real guard; the odd UID makes collisions impossible outright.
+id lbbuild >/dev/null 2>&1 || useradd -M -u 64010 -s /usr/bin/zsh lbbuild
 echo 'lbbuild ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/lbbuild
 chmod 0440 /etc/sudoers.d/lbbuild
 mkdir -p /etc/skel/.config /etc/skel/.local/share
 chown -R lbbuild:lbbuild /etc/skel
+
+# The provisioner runs as lbbuild with cwd /opt/dotfiles and writes generated
+# files back into the snapshot (apps-cli.sh lockfiles under config/apps/.locks;
+# browser-policies-gen.py writes config/apps/<app>/policies.json next to its
+# .base). The snapshot is root-owned, so hand it to lbbuild for the build;
+# 9999-cleanup restores root ownership before the image is sealed. Without
+# this, every browser's pre_install policy step fails and mullvad-browser /
+# zen-browser never install.
+if [ -d /opt/dotfiles ]; then
+  mkdir -p /opt/dotfiles/config/apps/.locks
+  chown -R lbbuild:lbbuild /opt/dotfiles
+fi

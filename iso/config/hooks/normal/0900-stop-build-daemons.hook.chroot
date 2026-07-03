@@ -8,8 +8,24 @@
 # immutable bits, and empty /tmp + /var/tmp so 8070 can't trip.
 set -e
 
-pkill -u lbbuild 2>/dev/null || true
-pkill -9 -u lbbuild 2>/dev/null || true
+# DO NOT use `pkill -u lbbuild` here: chroot shares the host PID namespace,
+# and pkill matches by UID — lbbuild's UID can collide with a host user (both
+# default to 1000), which kills the host user's entire session. Only kill
+# processes whose root is THIS chroot (verified via /proc/<pid>/root).
+kill_chroot_procs() {                                # $1=signal
+  root_id=$(stat -c '%d:%i' /)
+  lb_uid=$(id -u lbbuild 2>/dev/null) || return 0
+  for p in /proc/[0-9]*; do
+    pid=${p#/proc/}
+    [ "$pid" = "$$" ] && continue
+    [ "$(stat -c '%u' "$p" 2>/dev/null)" = "$lb_uid" ] || continue
+    [ "$(stat -c '%d:%i' "$p/root" 2>/dev/null)" = "$root_id" ] || continue
+    kill "-$1" "$pid" 2>/dev/null || true
+  done
+}
+kill_chroot_procs TERM
+sleep 1
+kill_chroot_procs KILL
 
 # Safety net: flush any package a hook left half-configured (e.g. a conffile
 # conflict), non-interactively keeping our version. Prevents the post-hook

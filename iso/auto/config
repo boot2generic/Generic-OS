@@ -5,18 +5,36 @@ set -e
 . "$(dirname "$0")/../config.env"
 EDITION="${EDITION:-everything}"
 VARIANT="${VARIANT:-universal}"
-LABEL="${ISO_VOLUME_PREFIX}-${EDITION}-${VARIANT}"
+# Volume ID must respect ISO 9660 / Joliet rules (charset [A-Z0-9_], ≤16 chars)
+# — the old lowercase-hyphen 24+ char labels drew xorriso warnings every build.
+# GENOS_ + first 5 of edition + _ + first 3 of variant stays ≤15 chars. Purely
+# cosmetic to boot: live-boot finds the medium by scanning, not by label.
+VOLID="$(printf 'GENOS_%.5s_%.3s' "$EDITION" "$VARIANT" | tr '[:lower:]-' '[:upper:]_')"
 
+# apt caching proxy (apt-cacher-ng). apt-cacher-ng can only cache plain http
+# (it can't see inside TLS), so when a proxy is set we route through http — apt
+# still GPG-verifies every package, so integrity is unchanged. Without a proxy
+# we keep the configured (https) mirror.
+PROXY_ARGS=""
+MIRROR="$DEBIAN_MIRROR"
+if [ -n "${APT_PROXY:-}" ]; then
+  MIRROR="$(printf '%s' "$DEBIAN_MIRROR" | sed 's#^https://#http://#')"
+  PROXY_ARGS="--apt-http-proxy $APT_PROXY"
+  echo "[config] apt proxy: $APT_PROXY  (mirror → $MIRROR)"
+fi
+
+# shellcheck disable=SC2086  # PROXY_ARGS must word-split into 0 or 2 args
 lb config noauto \
   --distribution "$DEBIAN_SUITE" \
   --architectures "$ARCH" \
   --archive-areas "$ARCHIVE_AREAS" \
-  --mirror-bootstrap "$DEBIAN_MIRROR" \
-  --mirror-binary "$DEBIAN_MIRROR" \
+  --mirror-bootstrap "$MIRROR" \
+  --mirror-binary "$MIRROR" \
+  $PROXY_ARGS \
   --debian-installer none \
   --bootappend-live "boot=live components quiet splash" \
   --chroot-squashfs-compression-type "${SQUASHFS_COMP:-zstd}" \
   --chroot-squashfs-compression-level "${SQUASHFS_LEVEL:-12}" \
-  --iso-volume "$LABEL" \
+  --iso-volume "$VOLID" \
   --iso-application "Generic-OS (${EDITION}/${VARIANT})" \
   "${@}"

@@ -78,7 +78,8 @@ sudo ./build.sh clean           # reset the build tree
 ```
 Output: `iso/out/<suite>-<edition>-<variant>.iso`. Each build **auto-pulls the
 latest dotfiles** first (submodule tracks `main`); build from the pinned checkout
-with `NO_UPDATE_DOTFILES=1 sudo ./…`.
+with `sudo NO_UPDATE_DOTFILES=1 ./…` (variable *after* `sudo` — its default
+`env_reset` strips variables set before it).
 
 ## Update the dotfiles
 Edit + push in the `dotfiles/` submodule (it's the real `boot2generic/dotfiles`

@@ -1,0 +1,47 @@
+# Lints the build/validation scripts and proves every package referenced in
+# the Debian package lists still has an install candidate on the target suite.
+# Catches the whitelist-.gitignore failure mode too: a source file that was
+# never re-included simply won't exist in the checkout, and the explicit
+# shellcheck file list below will fail on it.
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: shellcheck + python syntax
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates shellcheck python3
+      - uses: actions/checkout@v4
+      - name: shellcheck (severity warning+; SC2015-style notes stay advisory)
+        run: |
+          shellcheck -S warning \
+            iso/build.sh iso/container-build.sh iso/check-packages.sh \
+            iso/validate-iso.sh iso/validate-boot.sh iso/make-kali-key.sh \
+            iso/extras/apt-cacher.sh iso/auto/config iso/auto/build iso/auto/clean \
+            iso/config/hooks/normal/0*.hook.chroot \
+            iso/config/hooks/normal/9999-cleanup.hook.chroot
+      - name: python syntax
+        run: python3 -m py_compile iso/validate-boot.py
+
+  packages:
+    name: package lists resolve on trixie
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Enable contrib/non-free/non-free-firmware (match ARCHIVE_AREAS)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+          sed -i 's/^Components: .*/Components: main contrib non-free non-free-firmware/' \
+            /etc/apt/sources.list.d/debian.sources
+          apt-get update
+      - uses: actions/checkout@v4
+      - name: check-packages
+        run: ./iso/check-packages.sh

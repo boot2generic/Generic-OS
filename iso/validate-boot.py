@@ -44,19 +44,33 @@ class JsonSock:
             if "return" in m or "error" in m: return m
 
 def qga_run(qga, cmd, timeout=120):
-    """Run `sh -c cmd` in the guest; return (exitcode, stdout, stderr)."""
-    r = qga.cmd("guest-exec", {"path": "/bin/sh", "arg": ["-c", cmd], "capture-output": True})
+    """Run `sh -c cmd` in the guest; return (exitcode, stdout, stderr).
+
+    Never raises: the guest agent can drop mid-check (desktop settle, reboot),
+    which used to crash the whole run. On any agent error we return a null
+    result so the individual check just fails/warns instead.
+    """
+    try:
+        r = qga.cmd("guest-exec", {"path": "/bin/sh", "arg": ["-c", cmd], "capture-output": True})
+    except (OSError, EOFError, AttributeError) as e:
+        return (None, "", f"(agent unavailable: {e})")
     if "error" in r: return (None, "", r["error"].get("desc", "guest-exec error"))
     pid = r["return"]["pid"]; end = time.time() + timeout
     while time.time() < end:
-        st = qga.cmd("guest-exec-status", {"pid": pid}).get("return", {})
+        try:
+            st = qga.cmd("guest-exec-status", {"pid": pid}).get("return", {})
+        except (OSError, EOFError, AttributeError) as e:
+            return (None, "", f"(agent dropped: {e})")
         if st.get("exited"):
             dec = lambda k: base64.b64decode(st.get(k, "")).decode("utf-8", "replace")
-            return (st.get("exitcode", 0), dec("out-data"), dec("err-data"))
+            # No exitcode key => the process was killed by a signal; report a
+            # non-zero code so a signal-kill isn't mistaken for success.
+            return (st.get("exitcode", 1), dec("out-data"), dec("err-data"))
         time.sleep(0.5)
     return (None, "", "(timeout)")
 
 def main():
+    """Returns the process exit code (0 = all checks passed)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("iso")
     ap.add_argument("--out", default="out/boot-validate")
@@ -64,6 +78,10 @@ def main():
     ap.add_argument("--desktop-timeout", type=int, default=240, help="s to wait for plasmashell")
     ap.add_argument("--mem", default="4096"); ap.add_argument("--cpus", default="4")
     ap.add_argument("--keep", action="store_true", help="leave the VM running")
+    ap.add_argument("--firmware", choices=["bios", "uefi"],
+                    help="boot through real firmware + bootloader (isolinux/grub-efi, "
+                         "relies on the 5s menu auto-boot) instead of direct kernel boot; "
+                         "uefi needs OVMF. Serial log stays empty (no console= on cmdline).")
     a = ap.parse_args()
 
     name = os.path.splitext(os.path.basename(a.iso))[0]
@@ -81,20 +99,40 @@ def main():
     tmp = tempfile.mkdtemp(prefix="genos-boot-"); qmp_s = f"{tmp}/qmp"; qga_s = f"{tmp}/qga"
     accel = "kvm" if os.path.exists("/dev/kvm") else "tcg"
 
-    # The ISO's boot menu has `timeout 0` (waits forever for a keypress), so we
-    # boot the kernel+initrd DIRECTLY (extracted from the ISO) — deterministic,
-    # no menu. The ISO is still attached as a cdrom so live-boot finds the
-    # squashfs medium; console=ttyS0 mirrors kernel logs to the serial file.
-    log("  extracting kernel + initrd from ISO…")
-    if subprocess.run(["xorriso", "-osirrox", "on", "-indev", a.iso,
-                       "-extract", "/live/vmlinuz", f"{tmp}/vmlinuz",
-                       "-extract", "/live/initrd.img", f"{tmp}/initrd.img"],
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
-        emit("FAIL", "could not extract /live/vmlinuz + /live/initrd.img (need xorriso; valid ISO?)"); return
+    # Two boot modes:
+    #   default — boot the kernel+initrd extracted from the ISO directly:
+    #     deterministic and lets us add console=ttyS0 for the serial log.
+    #   --firmware bios|uefi — boot the ISO through real firmware + bootloader
+    #     (exercises isolinux / grub-efi and the 5s menu auto-boot), closest
+    #     to real hardware.
+    def bail(msg):                      # FAIL before the VM/try-finally exists
+        emit("FAIL", msg)
+        rep.write(f"\nsummary: {PASS} passed, {WARN} warnings, {FAIL} failed\n"); rep.close()
+        shutil.rmtree(tmp, ignore_errors=True); return 1
+    if a.firmware:
+        boot_args = ["-boot", "d"]
+        if a.firmware == "uefi":
+            ovmf = "/usr/share/OVMF/OVMF_CODE.fd"
+            if not os.path.exists(ovmf):
+                return bail(f"--firmware uefi needs OVMF ({ovmf}) — apt install ovmf")
+            boot_args += ["-bios", ovmf]
+        log(f"  firmware boot ({a.firmware}) — relying on the boot menu's 5s auto-boot…")
+    else:
+        log("  extracting kernel + initrd from ISO…")
+        try:
+            extracted = subprocess.run(["xorriso", "-osirrox", "on", "-indev", a.iso,
+                                        "-extract", "/live/vmlinuz", f"{tmp}/vmlinuz",
+                                        "-extract", "/live/initrd.img", f"{tmp}/initrd.img"],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        except FileNotFoundError:
+            extracted = False
+        if not extracted:
+            return bail("could not extract /live/vmlinuz + /live/initrd.img (need xorriso; valid ISO?)")
+        boot_args = ["-kernel", f"{tmp}/vmlinuz", "-initrd", f"{tmp}/initrd.img",
+                     "-append", "boot=live components quiet console=ttyS0"]
     qemu = [
         "qemu-system-x86_64", "-machine", f"accel={accel}", "-m", a.mem, "-smp", a.cpus,
-        "-kernel", f"{tmp}/vmlinuz", "-initrd", f"{tmp}/initrd.img",
-        "-append", "boot=live components quiet console=ttyS0",
+        *boot_args,
         "-cdrom", a.iso, "-vga", "virtio", "-display", "none",
         "-qmp", f"unix:{qmp_s},server=on,wait=off",
         "-chardev", f"socket,path={qga_s},server=on,wait=off,id=qga0",
@@ -103,12 +141,18 @@ def main():
     ]
     if accel == "tcg": emit("WARN", "no /dev/kvm — using slow TCG emulation")
     log(f"  launching QEMU ({accel})…")
-    vm = subprocess.Popen(qemu, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    # stderr to a file, not a pipe: nothing ever drains a pipe, so a chatty
+    # QEMU would fill it and deadlock — and the file doubles as diagnostics
+    # when QEMU dies before QMP comes up.
+    qemu_log = os.path.join(a.out, f"{name}.qemu.log")
+    qemu_err = open(qemu_log, "w")
+    vm = subprocess.Popen(qemu, stdout=subprocess.DEVNULL, stderr=qemu_err)
 
     ok = False
     try:
         qmp = JsonSock(qmp_s)
-        if not qmp.connect(30): emit("FAIL", "QMP socket never came up (QEMU failed to start)"); return
+        if not qmp.connect(30):
+            emit("FAIL", f"QMP socket never came up (QEMU failed to start — see {qemu_log})"); return 1
         qmp._readline(); qmp.cmd("qmp_capabilities")            # greeting, then negotiate
 
         # Wait for the guest agent = the guest booted far enough to talk back.
@@ -118,12 +162,13 @@ def main():
         while time.time() < end:
             try:
                 if "return" in qga.cmd("guest-ping"): up = True; break
-            except (OSError, EOFError): qga = JsonSock(qga_s); qga.connect(5, recv_timeout=8)
+            except (OSError, EOFError, AttributeError): qga = JsonSock(qga_s); qga.connect(5, recv_timeout=8)
             time.sleep(3)
         if not up:
             emit("FAIL", "guest agent never responded — VM didn't boot or agent absent (rebuild with qemu-guest-agent)")
-            qmp.cmd("screendump", {"filename": os.path.abspath(f"{a.out}/{name}.boot.png"), "format": "png"})
-            return
+            try: qmp.cmd("screendump", {"filename": os.path.abspath(f"{a.out}/{name}.boot.png"), "format": "png"})
+            except Exception: pass          # QMP may be dead too; the FAIL above is the result
+            return 1
         emit("PASS", "guest booted (agent responding)")
         qga.s.settimeout(45)   # roomier now that the agent is live (guest-exec replies)
 
@@ -131,7 +176,7 @@ def main():
         log(f"  waiting up to {a.desktop_timeout}s for the Plasma desktop…")
         end = time.time() + a.desktop_timeout; desk = False
         while time.time() < end:
-            rc, out, _ = qga_run(qga, "pgrep -x plasmashell || pgrep -x plasmashell.bin")
+            rc, out, _ = qga_run(qga, "pgrep -x plasmashell")
             if out.strip(): desk = True; break
             time.sleep(4)
         if desk: emit("PASS", "Plasma desktop is running (plasmashell)")
@@ -155,6 +200,8 @@ def main():
         rep.write(f"\n-- live user home: {home} --\n")
         check(has_proc("conky"), "conky is running (system monitor overlay wired)",
               "conky NOT running (autostart/apply-theme?)")
+        check(not has_proc("plasma-welcome"), "Welcome Center suppressed (kded module disabled)",
+              "plasma-welcome is running — kded6rc suppression not effective")
         check(bool(qga_run(qga, f"test -s {home}/.zshrc && echo y")[1].strip()),
               "dotfiles deployed: ~/.zshrc in live user home",
               "~/.zshrc missing from live user home (skel not applied)")
@@ -204,10 +251,13 @@ def main():
         if not a.keep:
             try: vm.wait(timeout=30)
             except Exception: vm.kill()
+        try: qemu_err.close()
+        except Exception: pass
         rep.write(f"\nsummary: {PASS} passed, {WARN} warnings, {FAIL} failed\n"); rep.close()
-        shutil.rmtree(tmp, ignore_errors=True)
+        if a.keep: log(f"  --keep: VM left running (QMP {qmp_s}, QGA {qga_s})")
+        else:      shutil.rmtree(tmp, ignore_errors=True)
         log(f"  report: {report_path}")
-    sys.exit(0 if ok else 1)
+    return 0 if ok else 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

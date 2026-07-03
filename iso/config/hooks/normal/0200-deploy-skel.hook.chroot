@@ -27,12 +27,27 @@ runuser -u lbbuild -- mkdir -p \
 runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
   /opt/dotfiles/local_setup.sh deploy --plasma --no-gpu || true
 
+# The wallpaper PNG is one of deploy's LAST steps — historically lost whenever
+# an earlier best-effort step aborted the deploy (the _conky_reload_kwin_rules
+# set -e bug shipped wallpaper-less ISOs). If deploy didn't leave one, bake it
+# directly: pinned download first (build host is online), else the offline
+# procedural generator (python3-pil is a list package). Required below.
+if [ ! -s /etc/skel/.config/wallpaper/wallpaper.png ]; then
+  echo "0200: deploy left no wallpaper.png — baking it directly"
+  runuser -u lbbuild -- env HOME=/etc/skel sh -c '
+    cd /etc/skel/.config/wallpaper || exit 1
+    bash ./download_wallpaper.sh >/dev/null 2>&1 \
+      || python3 ./generate_wallpaper.py --width 1920 --height 1080 --output wallpaper.png
+  ' || true
+fi
+
 missing=0
 for f in /etc/skel/.zshrc \
          /etc/skel/.config/kdeglobals \
          /etc/skel/.config/autostart/conky.desktop \
-         /etc/skel/.config/alacritty/alacritty.toml; do
-  [ -e "$f" ] || { echo "FATAL: deploy did not produce $f"; missing=1; }
+         /etc/skel/.config/alacritty/alacritty.toml \
+         /etc/skel/.config/wallpaper/wallpaper.png; do
+  [ -s "$f" ] || { echo "FATAL: deploy did not produce $f"; missing=1; }
 done
 [ "$missing" = 0 ] || exit 1
 

@@ -1,7 +1,16 @@
-# Whitelist .gitignore: track ONLY the build source; ignore everything
-# live-build generates (chroot/, binary/, cache/, .build/, local/, .lock,
-# chroot.*, build.log, ISOs, and the config/ subtrees `lb config` regenerates
-# incl. its own hook symlinks). Pattern: ignore all, then re-include our inputs.
+# Whitelist .gitignore: track ONLY the build source; ignore everything else.
+# The leading `/*` ignores every path not re-included below, which already
+# covers all generated/transient artifacts, namely:
+#   build:      chroot/, binary/, cache/, .build/, local/, .lock, chroot.*,
+#               build.log, live-image-*.iso, out/*.iso, and the config/ subtrees
+#               `lb config` regenerates (incl. its own hook symlinks),
+#               config/includes.chroot_before_packages/ (build-only apt/dpkg drop-ins).
+#   validation: validate.log, out/boot-validate/ (screenshots *.png, *.report.txt,
+#               *.serial.log, boot-validate.log) — all under out/, all ignored.
+#   container:  the runtime image lives in podman/docker storage, not the repo.
+# Nothing extra is needed to ignore new artifacts here; they fall under `/*`.
+# The real maintenance is the OPPOSITE — a NEW SOURCE file must be re-included
+# below or the whitelist silently drops it. Add such files to the lists that follow.
 
 /*
 
@@ -28,6 +37,7 @@
 !/config/hooks/
 !/config/package-lists/
 !/config/includes.chroot/
+!/config/bootloaders/
 
 # hooks/: our hooks only (live-build drops its own symlinks into normal/)
 /config/hooks/*
@@ -42,6 +52,7 @@
 !/config/hooks/normal/0500-terminal-skel.hook.chroot
 !/config/hooks/normal/0600-nvidia-bake.hook.chroot
 !/config/hooks/normal/0800-live-autologin.hook.chroot
+!/config/hooks/normal/0850-branding.hook.chroot
 !/config/hooks/normal/0700-enable-services.hook.chroot
 !/config/hooks/normal/0900-stop-build-daemons.hook.chroot
 !/config/hooks/normal/9999-cleanup.hook.chroot

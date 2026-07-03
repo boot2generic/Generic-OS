@@ -85,8 +85,19 @@ rmdir "$CTX" 2>/dev/null || true
 #   --privileged: live-build needs mount, debootstrap chroot, and loop devices.
 #   --rm: the container is torn down automatically when the build finishes.
 echo "[container] running build (container is auto-removed on exit)…"
-"$RT" run --rm --privileged \
+# Speed knobs are forwarded from the host env into the container so
+# `sudo FAST=1 APT_PROXY=… ./container-build.sh …` reaches build.sh/auto/config.
+# (VAR after sudo: default env_reset strips VARs set before sudo.)
+# An APT_PROXY on localhost lives on the host, so use the host network namespace
+# to make localhost:3142 inside the container hit the host's apt-cacher-ng.
+NET_ARGS=()
+[[ "${APT_PROXY:-}" == *localhost* || "${APT_PROXY:-}" == *127.0.0.1* ]] && NET_ARGS=(--network host)
+"$RT" run --rm --privileged "${NET_ARGS[@]}" \
   -e "NO_UPDATE_DOTFILES=${NO_UPDATE_DOTFILES:-0}" \
+  -e "FAST=${FAST:-0}" \
+  -e "SQUASHFS_LEVEL=${SQUASHFS_LEVEL:-}" \
+  -e "SQUASHFS_COMP=${SQUASHFS_COMP:-}" \
+  -e "APT_PROXY=${APT_PROXY:-}" \
   -v "$PROJECT_DIR":/project \
   -w /project/iso \
   "$IMAGE" ./build.sh "$@"

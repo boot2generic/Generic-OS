@@ -24,6 +24,16 @@ cd "$ISO_DIR"
 [[ $EUID -eq 0 ]] || { echo "build.sh must run as root (live-build needs it)"; exit 1; }
 command -v lb >/dev/null || { echo "install live-build: apt install live-build"; exit 1; }
 
+# When an apt cache proxy is configured, also route the bootstrap (debootstrap)
+# stage through it — debootstrap honors http_proxy, and auto/config drops the
+# mirror to http so the proxy can actually cache. apt GPG-verifies regardless.
+# Only http_proxy: apt-cacher-ng is an apt cache, not a general HTTPS forward
+# proxy, so exporting https_proxy would break the HTTPS git pull below and any
+# TLS third-party repo. The dotfiles pull is shielded from it explicitly.
+if [[ -n "${APT_PROXY:-}" ]]; then
+  export http_proxy="$APT_PROXY"
+fi
+
 # --- progress / logging helpers -------------------------------------------
 if [[ -t 1 ]]; then
   c_b=$'\033[1;36m'; c_g=$'\033[1;32m'; c_y=$'\033[1;33m'; c_0=$'\033[0m'
@@ -48,8 +58,11 @@ update_dotfiles() {
   # Run git as the invoking user: the repo is user-owned (avoids git's
   # "dubious ownership" refusal under sudo) and uses that user's config.
   # GIT_TERMINAL_PROMPT=0 → never block on a credential prompt.
-  local git_as=(env GIT_TERMINAL_PROMPT=0 git)
-  [[ -n "${SUDO_USER:-}" ]] && git_as=(sudo -u "$SUDO_USER" env GIT_TERMINAL_PROMPT=0 git)
+  # http_proxy= https_proxy= : never route the github HTTPS fetch through the
+  # apt cache proxy (it can't CONNECT to arbitrary TLS hosts) — that would make
+  # the pull fail and silently fall back to stale dotfiles.
+  local git_as=(env GIT_TERMINAL_PROMPT=0 http_proxy= https_proxy= git)
+  [[ -n "${SUDO_USER:-}" ]] && git_as=(sudo -u "$SUDO_USER" env GIT_TERMINAL_PROMPT=0 http_proxy= https_proxy= git)
 
   # Pull over HTTPS instead of the configured SSH URL. SSH under sudo HANGS:
   # sudo strips SSH_AUTH_SOCK (no agent) and the BatchMode env, so git's ssh
@@ -118,6 +131,15 @@ Dpkg::Use-Pty "0";
 Acquire::Languages "none";
 EOF
 
+  # With an apt cache proxy, apt's https method falls back to the http proxy
+  # setting and tries to CONNECT-tunnel TLS repos (Mullvad, Signal) through
+  # apt-cacher-ng — which denies it (403), so those repos never refresh during
+  # hooks. Pin https to DIRECT for the build: TLS repos bypass the cache (it
+  # couldn't cache them anyway). Removed with the rest of this file by 9999.
+  if [[ -n "${APT_PROXY:-}" ]]; then
+    printf 'Acquire::https::Proxy "DIRECT";\n' >> "$INC/etc/apt/apt.conf.d/90dotfiles-build"
+  fi
+
   # Build-only speed: tell dpkg to skip fsync during the build (the chroot is
   # ephemeral, so durability doesn't matter). Big win on package install/config.
   # Staged in includes.chroot_before_packages so it's active for the BASE
@@ -129,7 +151,12 @@ EOF
 stage_lists() {                     # $1=stacks  $2=variant
   local s f
   clear_generated_lists
-  for s in $1; do f=$(stack_file "$s") && cp "variants/stacks/$f.list.chroot" "$LISTS/"; done
+  # Hard-fail on an unknown/typo'd stack rather than silently shipping an ISO
+  # missing that stack's packages.
+  for s in $1; do
+    f=$(stack_file "$s") || { echo "build.sh: unknown stack '$s' in edition (have: dev security gaming)"; exit 1; }
+    cp "variants/stacks/$f.list.chroot" "$LISTS/"
+  done
   [[ "$2" == nvidia ]] && cp variants/nvidia/25-gpu-nvidia.list.chroot "$LISTS/"
   return 0
 }

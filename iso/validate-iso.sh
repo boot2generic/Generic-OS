@@ -30,7 +30,7 @@ have(){ command -v "$1" >/dev/null 2>&1; }
 # Is package $2 installed in the squashfs rooted at $1 ? -> prints y/n
 pkg_ok(){
   awk -v pkg="$2" 'BEGIN{RS="";FS="\n"}
-    { p=0; i=0; for(n=1;n<=NF;n++){ if($n=="Package: "pkg)p=1; if($n ~ /^Status: .* installed$/)i=1 }
+    { p=0; i=0; for(n=1;n<=NF;n++){ if($n=="Package: "pkg)p=1; if($n ~ /^Status: .* ok installed$/)i=1 }
       if(p){ found=1; print (i?"y":"n"); exit } }
     END{ if(!found) print "n" }' "$1/var/lib/dpkg/status" 2>/dev/null
 }
@@ -83,6 +83,19 @@ content(){  # $1=iso $2=edition $3=variant
   chk_file "$sq" etc/skel/.config/kdeglobals
   chk_file "$sq" etc/skel/.config/autostart/conky.desktop      # regression guard (the old 0200 bug)
   chk_file "$sq" etc/skel/.config/alacritty/alacritty.toml
+  # Branding (0850 hook): Welcome Center suppressed; Calamares says Generic OS.
+  # The kded6rc module disable is the one that actually works on trixie (the
+  # xdg-autostart override is belt-and-braces — plasma-welcome starts via kded).
+  chk_grep "$sq" etc/skel/.config/kded6rc 'autoload=false'
+  chk_file "$sq" etc/skel/.config/autostart/org.kde.plasma-welcome.desktop
+  chk_grep "$sq" etc/skel/.config/autostart/org.kde.plasma-welcome.desktop 'Hidden=true'
+  chk_file "$sq" etc/skel/.config/wallpaper/wallpaper.png   # regression guard (deploy-abort bug)
+  local bd; bd=$(find "$sq/etc/calamares" "$sq/usr/share/calamares" -name branding.desc 2>/dev/null | head -1)
+  if [ -n "$bd" ]; then
+    grep -q 'Generic OS' "$bd" && p "Calamares branding says Generic OS" || f "Calamares branding.desc still says Debian"
+  else
+    w "no Calamares branding.desc found in squashfs"
+  fi
   [ -f "$sq/etc/machine-id" ] && [ ! -s "$sq/etc/machine-id" ] && p "machine-id blanked (fresh per install)" || w "machine-id not empty"
   grep -q '^lbbuild:' "$sq/etc/passwd" 2>/dev/null && f "build user 'lbbuild' still present" || p "build user removed"
   chk_absent "$sq" etc/sudoers.d/lbbuild
@@ -136,6 +149,12 @@ for iso in "${ARGS[@]}"; do
   base=$(basename "$iso" .iso)              # trixie-<edition>-<variant>
   ed=$(echo "$base" | cut -d- -f2); var=$(echo "$base" | cut -d- -f3)
   echo; echo "== $(basename "$iso")  (edition=$ed variant=$var) =="
+  # A FAIL against an ISO built from older source is expected noise (e.g. a
+  # package added to the lists since) — flag it so results aren't misread.
+  newer=$(find build.sh config.env auto editions variants extras \
+               config/hooks config/package-lists \
+               -type f -newer "$iso" -print -quit 2>/dev/null)
+  [ -n "$newer" ] && w "ISO predates a build-source change ($newer) — rebuild before trusting FAILs"
   before=$FAIL
   structural "$iso"
   content "$iso" "$ed" "$var"

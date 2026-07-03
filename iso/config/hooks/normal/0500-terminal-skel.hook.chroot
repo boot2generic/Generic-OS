@@ -5,3 +5,11 @@
 set -e
 runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 \
   /opt/dotfiles/local_setup.sh terminal --plasma --no-nix --no-gpu || true
+
+# The whole stage is best-effort (|| true) so a plugin pre-warm failure can't
+# abort the build — but a TOTAL failure (nothing landed in skel) would ship an
+# ISO with no shell stack and no error. Surface that in the build log.
+if [ ! -e /etc/skel/.oh-my-zsh ] && [ ! -e /etc/skel/.tmux/plugins/tpm ] \
+   && [ ! -e /etc/skel/.config/tmux/plugins/tpm ]; then
+  echo "WARN: terminal stage produced no shell-stack artifacts in /etc/skel (oh-my-zsh/tpm) — check the log above"
+fi

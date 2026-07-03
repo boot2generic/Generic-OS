@@ -5,6 +5,16 @@ set -e
 
 # /etc/skel must be root-owned; Calamares copies + chowns it to the new user.
 chown -R root:root /etc/skel
+# The baked snapshot was handed to lbbuild for the build (0150); restore root
+# ownership so the installed /opt/dotfiles isn't owned by a now-deleted uid.
+[ -d /opt/dotfiles ] && chown -R root:root /opt/dotfiles
+# Drop generated files the build wrote into the snapshot (kept out of the image
+# so it matches a clean checkout: policy artifacts are deployed to /etc, not here).
+rm -rf /opt/dotfiles/config/apps/.locks 2>/dev/null || true
+# Running apps-cli.sh/python in the chroot leaves compiled bytecode behind;
+# strip it so the installed snapshot isn't carrying build-time __pycache__.
+find /opt/dotfiles -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+find /opt/dotfiles -type f -name '*.pyc' -delete 2>/dev/null || true
 rm -f /etc/sudoers.d/lbbuild /etc/dotfiles-iso.env /etc/dotfiles-kali-tools.list
 rm -f /etc/apt/apt.conf.d/90dotfiles-build      # build-only non-interactive dpkg policy
 rm -f /etc/dpkg/dpkg.cfg.d/force-unsafe-io      # build-only fsync-skip speedup

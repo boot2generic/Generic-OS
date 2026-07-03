@@ -1,0 +1,56 @@
+#!/bin/sh
+# Generic-OS branding polish:
+#  1. Suppress KDE's Welcome Center (plasma-welcome) — it greets every new
+#     session with "Welcome to Debian GNU/Linux", wrong for a branded distro.
+#     Suppressed via an Hidden=true override in /etc/skel/.config/autostart, so
+#     it applies to the live user AND users Calamares creates from skel. The
+#     package stays installed (users can still launch it from the menu).
+#  2. Rebrand the Calamares installer surfaces that say "Debian": the
+#     "Install Debian" desktop launcher and branding.desc product names.
+# Both are tolerant of layout drift: files are located, not hardcoded blindly.
+set -e
+
+# --- 1. Welcome Center autostart override -----------------------------------
+# Written unconditionally (validate-iso.sh requires it); a Hidden=true entry
+# with no system counterpart is inert. Also cover any renamed autostart file
+# a future plasma-welcome might ship.
+mkdir -p /etc/skel/.config/autostart
+names="org.kde.plasma-welcome.desktop"
+for f in /etc/xdg/autostart/*plasma-welcome*.desktop; do
+  [ -e "$f" ] && names="$names $(basename "$f")"
+done
+for n in $(printf '%s\n' $names | sort -u); do
+  printf '[Desktop Entry]\nType=Application\nName=Welcome Center (suppressed)\nHidden=true\n' \
+    > "/etc/skel/.config/autostart/$n"
+done
+
+# In Debian trixie, plasma-welcome is actually launched by a KDED module
+# (kded_plasma-welcome.so) — there is NO /etc/xdg/autostart entry, so the
+# Hidden=true override above alone does nothing (kept as belt-and-braces for
+# layouts that do use xdg autostart). Disable the module for accounts created
+# from skel. Append rather than clobber in case a deploy ever ships kded6rc.
+f=/etc/skel/.config/kded6rc
+if ! grep -q '^\[Module-plasma-welcome\]' "$f" 2>/dev/null; then
+  printf '\n[Module-plasma-welcome]\nautoload=false\n' >> "$f"
+  echo "branding: plasma-welcome kded module disabled via skel kded6rc"
+fi
+
+# --- 2. Calamares: "Install Debian" launcher → "Install Generic OS" ---------
+# The live desktop icon and menu entry come from calamares-settings-debian's
+# .desktop file(s). Rewrite the visible Name and drop localized Name[..]
+# variants so the override shows in every locale.
+grep -rlE '^Name=Install Debian' /usr/share/applications /etc/skel 2>/dev/null \
+| while read -r f; do
+    sed -i -E 's/^Name=Install Debian.*/Name=Install Generic OS/; /^Name\[[^]]*\]=/d' "$f"
+    echo "branding: relabeled $f"
+  done
+
+# --- 2b. Calamares branding.desc product names -------------------------------
+find /etc/calamares /usr/share/calamares -name branding.desc 2>/dev/null \
+| while read -r f; do
+    sed -i -E \
+      -e 's/^([[:space:]]*productName:[[:space:]]*).*/\1Generic OS/' \
+      -e 's/^([[:space:]]*shortProductName:[[:space:]]*).*/\1Generic OS/' \
+      "$f"
+    echo "branding: product names set in $f"
+  done

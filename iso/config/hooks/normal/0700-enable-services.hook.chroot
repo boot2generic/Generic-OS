@@ -2,11 +2,14 @@
 # Enable (never start — no systemd in chroot) the services the installed
 # system needs running on first boot.
 set -e
-systemctl enable sddm 2>/dev/null || true
-systemctl enable NetworkManager 2>/dev/null || true
+# Log (don't silently swallow) an enable failure: a missing unit usually means
+# a package list dropped the service, which we want visible in the build log.
+en() { systemctl enable "$1" 2>/dev/null || echo "WARN: could not enable $1 (unit present?)"; }
+en sddm
+en NetworkManager
 # Power management: harmless to enable; tlp only acts on battery hardware.
-systemctl enable tlp 2>/dev/null || true
-systemctl enable thermald 2>/dev/null || true
+en tlp
+en thermald
 # guest agent: activates only when a hypervisor virtio channel exists (VMs,
 # incl. the boot-validation harness); inert on bare metal.
-systemctl enable qemu-guest-agent 2>/dev/null || true
+en qemu-guest-agent
