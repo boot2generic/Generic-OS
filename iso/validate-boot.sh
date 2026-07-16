@@ -22,11 +22,16 @@ command -v xorriso >/dev/null            || { echo "need xorriso: sudo apt insta
 [ -r /dev/kvm ] || echo "WARN: /dev/kvm not accessible — boots will be very slow (TCG). Add yourself to the 'kvm' group or use sudo."
 
 isos=("$@"); [ "${#isos[@]}" -gt 0 ] || isos=(out/*.iso)
-rc=0
+rc=0 ran=0
 for iso in "${isos[@]}"; do
-  [ -f "$iso" ] || { echo "skip (not found): $iso"; continue; }
+  # A missing ISO is a failure, not a skip: with an empty out/ the default
+  # glob stays literal ('out/*.iso'), and a typo'd explicit path used to make
+  # the script validate NOTHING yet still exit 0 — a false green.
+  [ -f "$iso" ] || { echo "FAIL (not found): $iso"; rc=1; continue; }
+  ran=1
   python3 validate-boot.py "$iso" --out "$OUT" || rc=1
 done
+[ "$ran" = 1 ] || { echo "ERROR: no ISOs were validated"; rc=1; }
 echo
 echo "==== boot validation done. Screenshots + reports in: $OUT/ ===="
 ls -1 "$OUT"/*.png "$OUT"/*.report.txt 2>/dev/null | sed 's/^/  /'

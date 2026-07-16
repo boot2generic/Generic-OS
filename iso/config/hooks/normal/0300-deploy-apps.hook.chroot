@@ -12,13 +12,26 @@ TIER_ARG=""
 
 before="$(mktemp)"; dpkg-query -W -f='${Package}\n' > "$before"
 
+# Desktop marker first, on its own: it must not be skippable by an app-install
+# failure below (it used to sit at the head of the same && chain).
+runuser -u lbbuild -- sh -c \
+  'mkdir -p /etc/skel/.config/dotfiles-state && echo plasma > /etc/skel/.config/dotfiles-state/desktop'
+
+# Best-effort by design (third-party repos can be down), but NEVER silent:
+# a bare `|| true` here once meant a total app-bake failure (network outage,
+# GPG/SHA pin mismatch) shipped an ISO with zero tiered apps and a green build.
+rc=0
 runuser -u lbbuild -- env HOME=/etc/skel DOTFILES_NO_LOCAL=1 sh -c "
-  mkdir -p /etc/skel/.config/dotfiles-state &&
-  echo plasma > /etc/skel/.config/dotfiles-state/desktop &&
   cd /opt/dotfiles &&
   ./scripts/apps-cli.sh validate &&
   ./scripts/apps-cli.sh install ${TIER_ARG}
-" || true
+" || rc=$?
+[ "$rc" -eq 0 ] \
+  || echo "WARNING: 0300 third-party app bake FAILED (rc=$rc) — ISO will ship without (some) tiered apps"
+# Sentinel: keepassxc is tier 1 = baked in EVERY edition; its absence means
+# the install phase died before doing anything useful.
+dpkg -s keepassxc >/dev/null 2>&1 \
+  || echo "WARNING: 0300 sentinel: keepassxc not installed — tiered app bake likely produced nothing"
 
 after="$(mktemp)"; dpkg-query -W -f='${Package}\n' > "$after"
 comm -13 "$before" "$after" | xargs -r apt-mark manual 2>/dev/null || true

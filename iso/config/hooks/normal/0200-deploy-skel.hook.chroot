@@ -51,5 +51,25 @@ for f in /etc/skel/.zshrc \
 done
 [ "$missing" = 0 ] || exit 1
 
-# Default shell = zsh for accounts created from skel.
+# Default shell = zsh for accounts created from skel. /etc/default/useradd
+# alone does NOT cut it — neither real user-creation path reads it:
+#   live user      → live-config's user-setup-apply runs `adduser`, which takes
+#                    DSHELL from /etc/adduser.conf (default /bin/bash);
+#   installed user → Calamares' users module passes its userShell setting
+#                    (compiled-in default /bin/bash) straight to useradd.
+# Cover all three so the baked zsh/starship stack isn't dormant behind bash.
 sed -i 's#^\(SHELL=\).*#\1/usr/bin/zsh#' /etc/default/useradd 2>/dev/null || true
+if grep -q '^DSHELL=' /etc/adduser.conf 2>/dev/null; then
+  sed -i 's#^DSHELL=.*#DSHELL=/usr/bin/zsh#' /etc/adduser.conf
+else
+  printf 'DSHELL=/usr/bin/zsh\n' >> /etc/adduser.conf
+fi
+find /etc/calamares /usr/share/calamares -name users.conf 2>/dev/null \
+| while read -r f; do
+    if grep -q '^userShell:' "$f"; then
+      sed -i 's#^userShell:.*#userShell: /usr/bin/zsh#' "$f"
+    else
+      printf '\nuserShell: /usr/bin/zsh\n' >> "$f"
+    fi
+    echo "0200: userShell=/usr/bin/zsh set in $f"
+  done

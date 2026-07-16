@@ -21,11 +21,25 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck (severity warning+; SC2015-style notes stay advisory)
         run: |
+          # Hooks listed EXPLICITLY (no glob): a glob silently matches fewer
+          # files when a hook was never re-included in the whitelist
+          # .gitignore — the exact failure mode this list exists to catch.
           shellcheck -S warning \
             iso/build.sh iso/container-build.sh iso/check-packages.sh \
             iso/validate-iso.sh iso/validate-boot.sh iso/make-kali-key.sh \
             iso/extras/apt-cacher.sh iso/auto/config iso/auto/build iso/auto/clean \
-            iso/config/hooks/normal/0*.hook.chroot \
+            iso/config/hooks/normal/0100-multiarch.hook.chroot \
+            iso/config/hooks/normal/0150-build-user.hook.chroot \
+            iso/config/hooks/normal/0200-deploy-skel.hook.chroot \
+            iso/config/hooks/normal/0300-deploy-apps.hook.chroot \
+            iso/config/hooks/normal/0400-kali-tools.hook.chroot \
+            iso/config/hooks/normal/0450-gaming-extras.hook.chroot \
+            iso/config/hooks/normal/0500-terminal-skel.hook.chroot \
+            iso/config/hooks/normal/0600-nvidia-bake.hook.chroot \
+            iso/config/hooks/normal/0700-enable-services.hook.chroot \
+            iso/config/hooks/normal/0800-live-autologin.hook.chroot \
+            iso/config/hooks/normal/0850-branding.hook.chroot \
+            iso/config/hooks/normal/0900-stop-build-daemons.hook.chroot \
             iso/config/hooks/normal/9999-cleanup.hook.chroot
       - name: python syntax
         run: python3 -m py_compile iso/validate-boot.py

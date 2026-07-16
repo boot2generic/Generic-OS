@@ -11,5 +11,9 @@ en NetworkManager
 en tlp
 en thermald
 # guest agent: activates only when a hypervisor virtio channel exists (VMs,
-# incl. the boot-validation harness); inert on bare metal.
-en qemu-guest-agent
+# incl. the boot-validation harness); inert on bare metal. Its unit ships an
+# EMPTY [Install] section on trixie, so `systemctl enable` ALWAYS errors —
+# don't try (the resulting every-build WARN drowned real enable failures).
+# Just assert the unit exists so a dropped package stays visible.
+[ -f /lib/systemd/system/qemu-guest-agent.service ] || [ -f /usr/lib/systemd/system/qemu-guest-agent.service ] \
+  || echo "WARN: qemu-guest-agent.service missing (dropped from package lists? boot validation will break)"

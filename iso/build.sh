@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Top-level ISO builder. Run from a Debian host matching $DEBIAN_SUITE.
 #
-#   sudo ./build.sh            # build every edition in $EDITIONS (config.env)
-#   sudo ./build.sh security   # build one edition (all its variants)
-#   sudo ./build.sh clean      # lb clean + drop synced includes/lists
+#   sudo ./build.sh                  # build every edition in $EDITIONS (config.env)
+#   sudo ./build.sh security         # build one edition (all its variants)
+#   sudo ./build.sh gaming nvidia    # build one edition/variant only
+#   sudo ./build.sh clean            # lb clean + drop synced includes/lists
 #
 # The dotfiles live in the `dotfiles/` git submodule (sibling of iso/). By
 # default each build pulls the latest dotfiles (submodule tracks main) so
-# ISOs always reflect the newest pushed dotfiles. Set NO_UPDATE_DOTFILES=1
-# to build from whatever is currently checked out.
+# ISOs always reflect the newest pushed dotfiles — and ABORTS if that pull
+# can't complete (offline, dirty/diverged checkout) rather than silently
+# building from stale dotfiles. Set NO_UPDATE_DOTFILES=1 to explicitly build
+# from whatever is currently checked out.
 #
 # An edition is defined in editions/<name>.env (stacks, app tiers, Kali
 # settings, GPU variants). Output: out/<suite>-<edition>-<variant>.iso
@@ -77,16 +80,27 @@ update_dotfiles() {
     *) warn "can't derive an https URL for dotfiles ($url) — using checked-out version"; return 0 ;;
   esac
 
-  say "dotfiles: pulling latest over https (≤60s; falls back to checked-out)…"
+  # HARD-FAIL when the update can't complete: a warn-and-continue here once
+  # shipped ISOs from silently stale dotfiles (dirty tree/offline made the
+  # ff-only merge fail and nobody noticed the warn scroll past). Building
+  # from the current checkout is still available — but only as an EXPLICIT
+  # choice via NO_UPDATE_DOTFILES=1.
+  say "dotfiles: pulling latest over https (≤60s)…"
   "${git_as[@]}" -C "$REPO_DIR" checkout -q main 2>/dev/null || true
-  if timeout 60 "${git_as[@]}" -C "$REPO_DIR" \
+  if ! timeout 60 "${git_as[@]}" -C "$REPO_DIR" \
         -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 \
-        fetch --quiet "$https" main 2>/dev/null \
-     && "${git_as[@]}" -C "$REPO_DIR" merge --ff-only --quiet FETCH_HEAD 2>/dev/null; then
-    ok "dotfiles at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
-  else
-    warn "dotfiles update skipped (offline/diverged) — building from checked-out version"
+        fetch --quiet "$https" main; then
+    echo "ERROR: could not fetch latest dotfiles from $https (offline?)."
+    echo "       To build from the current checkout instead: sudo NO_UPDATE_DOTFILES=1 ./build.sh …"
+    exit 1
   fi
+  if ! "${git_as[@]}" -C "$REPO_DIR" merge --ff-only --quiet FETCH_HEAD; then
+    echo "ERROR: dotfiles checkout cannot fast-forward to the fetched main (dirty or diverged):"
+    "${git_as[@]}" -C "$REPO_DIR" status --short | sed 's/^/         /' | head -10
+    echo "       Commit/stash + push in dotfiles/, or build the current checkout with NO_UPDATE_DOTFILES=1."
+    exit 1
+  fi
+  ok "dotfiles at $("${git_as[@]}" -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 }
 
 LISTS="config/package-lists"
@@ -95,7 +109,9 @@ INC_BP="config/includes.chroot_before_packages"   # staged, build-only (force-un
 GENERATED_LISTS="25-gpu-nvidia 30-dev 40-security 50-gaming"
 
 clear_generated_lists() { for l in $GENERATED_LISTS; do rm -f "$LISTS/$l.list.chroot"; done; }
-clean() { ./auto/clean || true; rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt" "${INC_BP:?}"; clear_generated_lists; }
+# live.list.chroot is lb-config-generated too (container-build.sh's clean and
+# .gitignore already treat it that way) — drop it on clean for consistency.
+clean() { ./auto/clean || true; rm -rf "${INC:?}/etc" "${INC:?}/usr" "${INC:?}/opt" "${INC_BP:?}"; clear_generated_lists; rm -f "$LISTS/live.list.chroot"; }
 
 stack_file() { case "$1" in dev) echo 30-dev;; security) echo 40-security;; gaming) echo 50-gaming;; *) return 1;; esac; }
 
@@ -186,13 +202,16 @@ stage_env() {                       # $1=edition $2=app-tiers $3=kali-tools $4=b
     "$1" "${2:-}" "${3:-0}" "${4:-0}" "${5:-0}" "$DEBIAN_SUITE" > "$INC/etc/dotfiles-iso.env"
 }
 
-build_one() {                       # $1=edition
-  local e="$1" v gaming=0
+build_one() {                       # $1=edition  [$2=variant (default: all)]
+  local e="$1" want="${2:-}" v gaming=0
   STACKS=""; KALI_REPO=0; KALI_TOOLS=0; BACKPORTS=0; APPS_TIERS=""; VARIANTS=""
   # shellcheck source=/dev/null
   . "editions/$e.env"
+  if [[ -n "$want" && " $VARIANTS " != *" $want "* ]]; then
+    echo "build.sh: edition '$e' has no variant '$want' (have: $VARIANTS)"; exit 1
+  fi
   [[ " $STACKS " == *" gaming "* ]] && gaming=1
-  for v in $VARIANTS; do
+  for v in ${want:-$VARIANTS}; do
     local t0=$SECONDS
     printf '%s\n%s═══ %s / %s  (suite=%s)  stacks:[%s] kali:%s ═══%s\n' \
       "" "$c_b" "$e" "$v" "$DEBIAN_SUITE" "$STACKS" "$KALI_REPO" "$c_0"
@@ -215,6 +234,9 @@ build_one() {                       # $1=edition
 case "${1:-}" in
   clean) clean; exit 0 ;;
   "")    update_dotfiles; for e in $EDITIONS; do build_one "$e"; done ;;
-  *)     if [[ -f "editions/$1.env" ]]; then update_dotfiles; build_one "$1";
+  *)     # Extra args beyond <edition> [<variant>] used to be silently ignored
+         # (…and '<edition> nvidia' built BOTH variants) — reject them instead.
+         [[ $# -le 2 ]] || { echo "usage: sudo ./build.sh [<edition> [<variant>] | clean]"; exit 1; }
+         if [[ -f "editions/$1.env" ]]; then update_dotfiles; build_one "$1" "${2:-}";
          else echo "unknown edition '$1' (have: $(cd editions && echo *.env | sed 's/\.env//g'))"; exit 1; fi ;;
 esac

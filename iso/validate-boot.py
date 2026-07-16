@@ -43,23 +43,51 @@ class JsonSock:
             m = self._readline()
             if "return" in m or "error" in m: return m
 
+def qga_sync(qga):
+    """Resynchronize the QGA stream after a recv timeout.
+
+    A timed-out cmd() leaves its (late) reply queued on the socket; the next
+    cmd() would read that stale reply as its own, mis-grading every check
+    after it (or KeyError-ing on a guest-exec reply shaped like a status
+    reply). guest-sync with a unique id lets us discard everything up to the
+    matching reply, realigning request/response. Best-effort: if the agent is
+    truly gone this just fails quietly and the next check reports null.
+    """
+    sid = int(time.time() * 1000) % 0x7FFFFFFF
+    try:
+        qga.send("guest-sync", {"id": sid})
+        end = time.time() + 10
+        while time.time() < end:
+            if qga._readline().get("return") == sid: return True
+    except (OSError, EOFError, AttributeError, ValueError):
+        pass
+    return False
+
 def qga_run(qga, cmd, timeout=120):
     """Run `sh -c cmd` in the guest; return (exitcode, stdout, stderr).
 
     Never raises: the guest agent can drop mid-check (desktop settle, reboot),
     which used to crash the whole run. On any agent error we return a null
-    result so the individual check just fails/warns instead.
+    result so the individual check just fails/warns instead. After a timeout
+    the stream is resynced (see qga_sync) so ONE slow reply can't poison the
+    grading of every later check.
     """
     try:
         r = qga.cmd("guest-exec", {"path": "/bin/sh", "arg": ["-c", cmd], "capture-output": True})
     except (OSError, EOFError, AttributeError) as e:
+        qga_sync(qga)
         return (None, "", f"(agent unavailable: {e})")
     if "error" in r: return (None, "", r["error"].get("desc", "guest-exec error"))
-    pid = r["return"]["pid"]; end = time.time() + timeout
+    pid = r.get("return", {}).get("pid")
+    if pid is None:                       # malformed/misaligned reply
+        qga_sync(qga)
+        return (None, "", "(guest-exec reply had no pid)")
+    end = time.time() + timeout
     while time.time() < end:
         try:
             st = qga.cmd("guest-exec-status", {"pid": pid}).get("return", {})
         except (OSError, EOFError, AttributeError) as e:
+            qga_sync(qga)
             return (None, "", f"(agent dropped: {e})")
         if st.get("exited"):
             dec = lambda k: base64.b64decode(st.get(k, "")).decode("utf-8", "replace")
@@ -171,6 +199,11 @@ def main():
             return 1
         emit("PASS", "guest booted (agent responding)")
         qga.s.settimeout(45)   # roomier now that the agent is live (guest-exec replies)
+        # A ping that timed out during the wait loop may have left its late
+        # reply queued (possibly delivered onto the post-reconnect socket) —
+        # realign before the first guest-exec so check #1 isn't graded
+        # against a stale ping reply.
+        qga_sync(qga)
 
         # Wait for the Plasma desktop (autologin), then let it settle + conky autostart.
         log(f"  waiting up to {a.desktop_timeout}s for the Plasma desktop…")
@@ -191,13 +224,18 @@ def main():
         emit("PASS" if os.path.exists(shot) and os.path.getsize(shot) else "FAIL", f"screenshot saved: {shot}")
 
         # --- in-guest checks ---
-        home = (qga_run(qga, "getent passwd user | cut -d: -f6")[1].strip()
-                or qga_run(qga, "ls -d /home/* 2>/dev/null | head -1")[1].strip() or "/home/user")
+        # live user is 'generic' (LIVE_USERNAME, 0800 hook); fall back to the
+        # first /home entry so older ISOs (live user 'user') still validate.
+        home = (qga_run(qga, "getent passwd generic | cut -d: -f6")[1].strip()
+                or qga_run(qga, "ls -d /home/* 2>/dev/null | head -1")[1].strip() or "/home/generic")
         def has_proc(p): return bool(qga_run(qga, f"pgrep -x {p}")[1].strip())
         def check(cond, okmsg, badmsg, warn=False):
             emit("PASS" if cond else ("WARN" if warn else "FAIL"), okmsg if cond else badmsg)
 
         rep.write(f"\n-- live user home: {home} --\n")
+        check(bool(qga_run(qga, "getent passwd generic")[1].strip()),
+              "live user is 'generic' (LIVE_USERNAME applied)",
+              "live user 'generic' missing — LIVE_USERNAME not applied (0800 hook)")
         check(has_proc("conky"), "conky is running (system monitor overlay wired)",
               "conky NOT running (autostart/apply-theme?)")
         check(not has_proc("plasma-welcome"), "Welcome Center suppressed (kded module disabled)",
@@ -205,6 +243,12 @@ def main():
         check(bool(qga_run(qga, f"test -s {home}/.zshrc && echo y")[1].strip()),
               "dotfiles deployed: ~/.zshrc in live user home",
               "~/.zshrc missing from live user home (skel not applied)")
+        # ~/.zshrc existing is not enough — the account must actually LOG IN
+        # to zsh (live-config's adduser takes DSHELL from adduser.conf, which
+        # the 0200 hook must have rewritten; else the zsh stack sits dormant).
+        shell = qga_run(qga, f"getent passwd $(stat -c %U {home} 2>/dev/null) | cut -d: -f7")[1].strip()
+        check(shell.endswith("zsh"), f"live user login shell is zsh ({shell})",
+              f"live user login shell is NOT zsh ({shell or 'n/a'}) — adduser.conf DSHELL not applied")
         check(bool(qga_run(qga, f"test -f {home}/.config/kdeglobals && echo y")[1].strip()),
               "Plasma theme config in home (~/.config/kdeglobals)",
               "~/.config/kdeglobals missing")
@@ -228,6 +272,7 @@ def main():
             emit("PASS" if ok_ else ("FAIL" if required else "WARN"),
                  f"app available: {bin_}" if ok_ else f"app missing: {bin_}")
         for b in ("plasmashell", "konsole", "alacritty", "nvim", "tmux", "zsh", "calamares"): app(b)
+        app("keepassxc", required=False)   # tier-1 app bake sentinel (0300 is best-effort)
         if edition in ("security", "everything"):
             app("nmap"); app("wireshark")
         if edition == "security": app("msfconsole", required=False)

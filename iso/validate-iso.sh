@@ -80,13 +80,29 @@ content(){  # $1=iso $2=edition $3=variant
     || w "grub-efi-amd64 absent — UEFI installs may not get a bootloader"
   chk_file "$sq" etc/default/grub
   chk_file "$sq" etc/skel/.zshrc
+  # Login shell actually zsh for created accounts (adduser = live user path).
+  chk_grep "$sq" etc/adduser.conf 'DSHELL=/usr/bin/zsh'
+  # Tier-1 app bake sentinel: 0300 is best-effort, so its total failure only
+  # WARNs in the build log — catch it here too. keepassxc is in every edition.
+  chk_pkg_opt "$sq" keepassxc "keepassxc (tier-1 app bake sentinel)"
   chk_file "$sq" etc/skel/.config/kdeglobals
   chk_file "$sq" etc/skel/.config/autostart/conky.desktop      # regression guard (the old 0200 bug)
   chk_file "$sq" etc/skel/.config/alacritty/alacritty.toml
   # Branding (0850 hook): Welcome Center suppressed; Calamares says Generic OS.
   # The kded6rc module disable is the one that actually works on trixie (the
   # xdg-autostart override is belt-and-braces — plasma-welcome starts via kded).
-  chk_grep "$sq" etc/skel/.config/kded6rc 'autoload=false'
+  # Live session identity (0800): named live user + SDDM autologin agree.
+  chk_grep "$sq" etc/live/config.conf.d/zz-username.conf 'LIVE_USERNAME="generic"'
+  chk_grep "$sq" etc/sddm.conf.d/zz-live-autologin.conf 'User=generic'
+  # Anchor autoload=false to the plasma-welcome section: a future deploy may
+  # ship its own kded6rc disabling some OTHER module, which would false-pass
+  # a bare 'autoload=false' grep while the Welcome Center still autostarts.
+  if grep -A2 '^\[Module-plasma-welcome\]' "$sq/etc/skel/.config/kded6rc" 2>/dev/null \
+     | grep -q 'autoload=false'; then
+    p "kded6rc disables plasma-welcome module"
+  else
+    f "kded6rc missing [Module-plasma-welcome] autoload=false"
+  fi
   chk_file "$sq" etc/skel/.config/autostart/org.kde.plasma-welcome.desktop
   chk_grep "$sq" etc/skel/.config/autostart/org.kde.plasma-welcome.desktop 'Hidden=true'
   chk_file "$sq" etc/skel/.config/wallpaper/wallpaper.png   # regression guard (deploy-abort bug)
@@ -151,9 +167,17 @@ for iso in "${ARGS[@]}"; do
   echo; echo "== $(basename "$iso")  (edition=$ed variant=$var) =="
   # A FAIL against an ISO built from older source is expected noise (e.g. a
   # package added to the lists since) — flag it so results aren't misread.
+  # Generated staging copies (25/30/40/50 + live, re-cp'd into package-lists
+  # during EVERY build) are excluded: their mtimes are always newer than any
+  # earlier edition's ISO, which made this warn on every multi-edition run.
+  # Their true sources (variants/) are in the list.
   newer=$(find build.sh config.env auto editions variants extras \
-               config/hooks config/package-lists \
-               -type f -newer "$iso" -print -quit 2>/dev/null)
+               config/hooks config/package-lists config/bootloaders \
+               -type f \
+               ! -name '25-gpu-nvidia.list.chroot' ! -name '30-dev.list.chroot' \
+               ! -name '40-security.list.chroot' ! -name '50-gaming.list.chroot' \
+               ! -name 'live.list.chroot' \
+               -newer "$iso" -print -quit 2>/dev/null)
   [ -n "$newer" ] && w "ISO predates a build-source change ($newer) — rebuild before trusting FAILs"
   before=$FAIL
   structural "$iso"

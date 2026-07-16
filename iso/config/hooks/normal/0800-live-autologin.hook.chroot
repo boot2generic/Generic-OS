@@ -1,17 +1,31 @@
 #!/bin/sh
-# Autologin the live session straight to the themed Plasma desktop (so users —
-# and the boot-validation harness — reach the desktop without a password they
-# don't have). live-config creates the live user 'user'; SDDM autologins it.
+# Live session identity + autologin:
+#  1. Name the live user 'generic' (default would be 'user') via live-config's
+#     baked config — /etc/live/config.conf.d is read by live-config at boot, so
+#     it applies on EVERY boot path (bootloader menu AND the boot-validation
+#     harness's direct kernel boot, which supplies its own cmdline and would
+#     miss a --bootappend-live parameter).
+#  2. Autologin that user straight to the themed Plasma desktop (so users —
+#     and the boot-validation harness — reach the desktop without a password
+#     they don't have). live-config creates the live user; SDDM autologins it.
 #
 # Harmless on an INSTALLED system: Calamares creates a different user, so
-# 'User=user' matches nothing there and SDDM just shows the normal greeter.
+# 'User=generic' matches nothing there and SDDM just shows the normal greeter
+# (live-config itself only runs when booted with boot=live).
 set -e
+
+mkdir -p /etc/live/config.conf.d
+cat > /etc/live/config.conf.d/zz-username.conf <<'EOF'
+# Live user account name (see 0800-live-autologin.hook.chroot).
+LIVE_USERNAME="generic"
+EOF
+
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/zz-live-autologin.conf <<'EOF'
 # Live-session autologin (see 0800-live-autologin.hook.chroot). No-op once
-# installed (the live user 'user' does not exist on the target).
+# installed (the live user 'generic' does not exist on the target).
 [Autologin]
-User=user
+User=generic
 Session=plasma
 Relogin=false
 EOF

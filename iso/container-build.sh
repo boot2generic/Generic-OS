@@ -6,7 +6,9 @@
 #
 #   sudo ./container-build.sh                 # build all editions (config.env)
 #   sudo ./container-build.sh security        # build one edition
-#   sudo ./container-build.sh clean           # remove container(s), image, artifacts
+#   sudo ./container-build.sh gaming nvidia   # build one edition/variant
+#   sudo ./container-build.sh clean           # remove build artifacts (keeps image + cache)
+#   sudo ./container-build.sh purge           # clean + remove container image and cache
 #
 #   sudo NO_UPDATE_DOTFILES=1 ./container-build.sh security   # skip the dotfiles pull
 #
@@ -105,4 +107,4 @@ NET_ARGS=()
 # ISOs were written to the bind-mounted out/ as container-root → hand back.
 [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER":"$(id -gn "$SUDO_USER")" out 2>/dev/null || true
 echo "[container] done. ISOs in iso/out/."
-echo "[container] image '$IMAGE' kept for fast rebuilds; 'sudo ./container-build.sh clean' removes it + artifacts."
+echo "[container] image '$IMAGE' kept for fast rebuilds; 'sudo ./container-build.sh purge' removes it (clean keeps it)."
