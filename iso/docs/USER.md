@@ -18,8 +18,11 @@ ISOs are named `trixie-<edition>-<gpu>.iso`.
 - **`nvidia`** — NVIDIA graphics. Driver is preinstalled. (Not built for `security`.)
 
 > NVIDIA + Secure Boot: if the desktop boots to a black screen, disable Secure
-> Boot in your firmware (the preinstalled driver is unsigned). Or use the
-> universal ISO on the integrated GPU first.
+> Boot in your firmware. (The preinstalled driver is signed only by a build-time
+> DKMS key your firmware doesn't trust; to keep Secure Boot instead, enroll it
+> after installing: `sudo mokutil --import /var/lib/dkms/mok.pub`, reboot, and
+> complete the blue MOK-manager prompt.) Or use the universal ISO on the
+> integrated GPU first.
 
 ## Install
 1. Write the ISO to a USB stick:

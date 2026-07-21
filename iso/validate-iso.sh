@@ -75,13 +75,38 @@ content(){  # $1=iso $2=edition $3=variant
   # packages from THIS squashfs. If they're absent, the installed system won't
   # boot (and /etc/default/grub — the NVIDIA cmdline target — won't exist).
   chk_pkg "$sq" grub2-common "grub2-common (update-grub for the install)"
-  { [ "$(pkg_ok "$sq" grub-efi-amd64)" = y ] || [ "$(pkg_ok "$sq" grub-efi-amd64-bin)" = y ]; } \
-    && p "grub-efi-amd64 present (UEFI target bootloader)" \
-    || w "grub-efi-amd64 absent — UEFI installs may not get a bootloader"
+  # calamares-bootloader-config apt-installs grub-efi in the OFFLINE target:
+  # if it isn't already baked, every UEFI install FAILS at the bootloader step
+  # (observed live in the boot harness). Hard requirement, not a warning.
+  chk_pkg "$sq" grub-efi-amd64 "grub-efi-amd64 (offline UEFI bootloader step)"
+  chk_pkg "$sq" grub-efi "grub-efi metapackage (bootloader-config no-op)"
+  chk_pkg "$sq" keyutils "keyutils (offline LUKS bootloader step)"
+  if grep -q 'offline-safe' "$sq/usr/share/calamares/helpers/calamares-bootloader-config" 2>/dev/null; then
+    p "calamares-bootloader-config is the offline-safe version (0860)"
+  else
+    f "calamares-bootloader-config NOT patched (0860 hook) — offline installs abort at bootloader"
+  fi
+  # sources-final writes the installed sources.list: without contrib/non-free
+  # the shipped nvidia/steam packages never receive updates post-install.
+  if grep -q 'main contrib non-free non-free-firmware' "$sq/usr/share/calamares/helpers/calamares-sources-final" 2>/dev/null; then
+    p "calamares-sources-final includes contrib + non-free components"
+  else
+    f "calamares-sources-final still writes 'main non-free-firmware' only (nvidia/steam updates unavailable post-install)"
+  fi
   chk_file "$sq" etc/default/grub
   chk_file "$sq" etc/skel/.zshrc
   # Login shell actually zsh for created accounts (adduser = live user path).
   chk_grep "$sq" etc/adduser.conf 'DSHELL=/usr/bin/zsh'
+  # Calamares path: 3.3 reads user.shell (nested), NOT top-level userShell —
+  # an ISO without the nested key installs users with /bin/bash. Locate the
+  # file the way Calamares does (/etc/calamares wins over /usr/share).
+  local ucf
+  ucf=$(find "$sq/etc/calamares" "$sq/usr/share/calamares" -name users.conf 2>/dev/null | head -1)
+  if [ -n "$ucf" ] && grep -A3 '^user:' "$ucf" | grep -q 'shell: */usr/bin/zsh'; then
+    p "calamares users.conf sets nested user.shell=/usr/bin/zsh"
+  else
+    f "calamares users.conf missing nested 'user: shell: /usr/bin/zsh' (installed users get bash)"
+  fi
   # Tier-1 app bake sentinel: 0300 is best-effort, so its total failure only
   # WARNs in the build log — catch it here too. keepassxc is in every edition.
   chk_pkg_opt "$sq" keepassxc "keepassxc (tier-1 app bake sentinel)"
@@ -94,18 +119,33 @@ content(){  # $1=iso $2=edition $3=variant
   # Live session identity (0800): named live user + SDDM autologin agree.
   chk_grep "$sq" etc/live/config.conf.d/zz-username.conf 'LIVE_USERNAME="generic"'
   chk_grep "$sq" etc/sddm.conf.d/zz-live-autologin.conf 'User=generic'
-  # Anchor autoload=false to the plasma-welcome section: a future deploy may
-  # ship its own kded6rc disabling some OTHER module, which would false-pass
-  # a bare 'autoload=false' grep while the Welcome Center still autostarts.
-  if grep -A2 '^\[Module-plasma-welcome\]' "$sq/etc/skel/.config/kded6rc" 2>/dev/null \
+  # Anchor autoload=false to the module section. The plugin id kded6 actually
+  # honours is "kded_plasma-welcome" (library basename, kded_ prefix NOT
+  # stripped) — verified at runtime: with only [Module-plasma-welcome] the
+  # Welcome Center still autoloads. Require the working section.
+  if grep -A2 '^\[Module-kded_plasma-welcome\]' "$sq/etc/skel/.config/kded6rc" 2>/dev/null \
      | grep -q 'autoload=false'; then
-    p "kded6rc disables plasma-welcome module"
+    p "kded6rc disables kded_plasma-welcome module"
   else
-    f "kded6rc missing [Module-plasma-welcome] autoload=false"
+    f "kded6rc missing [Module-kded_plasma-welcome] autoload=false (Welcome Center will autostart)"
   fi
   chk_file "$sq" etc/skel/.config/autostart/org.kde.plasma-welcome.desktop
   chk_grep "$sq" etc/skel/.config/autostart/org.kde.plasma-welcome.desktop 'Hidden=true'
+  # The check that actually decides at session start: LastSeenVersion in
+  # plasma-welcomerc must be far-future or the kded module launches the app.
+  chk_grep "$sq" etc/skel/.config/plasma-welcomerc 'LastSeenVersion=999'
   chk_file "$sq" etc/skel/.config/wallpaper/wallpaper.png   # regression guard (deploy-abort bug)
+  # HOME=/etc/skel leakage guard: autostart Exec lines must not point at the
+  # skel copies (users' own config edits would silently do nothing) — and must
+  # use '~/' not '$HOME/': the xdg-autostart generator mangles $ into \$ and
+  # every wrapped entry then dies with exit 127 at login (verified live).
+  if grep -l '^Exec=.*/etc/skel/' "$sq"/etc/skel/.config/autostart/*.desktop >/dev/null 2>&1; then
+    f "skel autostart .desktop Exec still hardcodes /etc/skel (0200 rewrite missing)"
+  elif grep -l '^Exec=.*\$HOME' "$sq"/etc/skel/.config/autostart/*.desktop >/dev/null 2>&1; then
+    f "skel autostart Exec uses \$HOME (breaks under systemd xdg generator — use ~/)"
+  else
+    p "skel autostart Exec lines are per-user (~/ resolved)"
+  fi
   local bd; bd=$(find "$sq/etc/calamares" "$sq/usr/share/calamares" -name branding.desc 2>/dev/null | head -1)
   if [ -n "$bd" ]; then
     grep -q 'Generic OS' "$bd" && p "Calamares branding says Generic OS" || f "Calamares branding.desc still says Debian"
@@ -136,6 +176,46 @@ content(){  # $1=iso $2=edition $3=variant
   if [ "$var" = nvidia ]; then
     chk_pkg "$sq" nvidia-driver "NVIDIA driver"
     chk_grep "$sq" etc/default/grub 'nvidia-drm.modeset=1'
+    # glx alternative must point at nvidia — live-build's stock 5020 hook
+    # resets it to mesa-diverted, which strips the nouveau blacklist + modprobe
+    # alias + modules-load slave links (driver dormant on real hardware).
+    # The 5025 hook re-points it; these catch a regression.
+    if [ "$(readlink "$sq/etc/alternatives/glx" 2>/dev/null)" = /usr/lib/nvidia ]; then
+      p "glx alternative -> /usr/lib/nvidia"
+    else
+      f "glx alternative is '$(readlink "$sq/etc/alternatives/glx" 2>/dev/null || echo none)' (want /usr/lib/nvidia — 5025 hook)"
+    fi
+    [ -L "$sq/etc/modprobe.d/nvidia-blacklists-nouveau.conf" ] \
+      && p "nouveau blacklisted (/etc/modprobe.d/nvidia-blacklists-nouveau.conf)" \
+      || f "nouveau NOT blacklisted (glx slave link missing)"
+    [ -L "$sq/etc/modprobe.d/nvidia.conf" ] \
+      && p "nvidia modprobe alias conf present" \
+      || f "/etc/modprobe.d/nvidia.conf missing (modprobe nvidia won't resolve)"
+    chk_grep "$sq" etc/initramfs-tools/modules 'nvidia-current'
+    # The live initrd must EMBED the driver (bare names silently resolve to
+    # nothing; nouveau then owns the GPU from early boot).
+    #
+    # NO PIPES here: this script runs `set -o pipefail`, the listing is ~3MB,
+    # and `… | grep -q` exits at the first match — the writer then dies with
+    # SIGPIPE (141), pipefail turns that into pipeline failure, and the check
+    # false-FAILed twice against demonstrably good ISOs. Capture to a
+    # variable, then pattern-match in pure shell.
+    if have lsinitramfs; then
+      local initrd_ls initrd_err
+      initrd_err=$(mktemp)
+      initrd_ls=$(lsinitramfs "$mnt/live/initrd.img" 2>"$initrd_err")
+      case "$initrd_ls" in
+        *nvidia-current*.ko*)
+          p "live initrd embeds nvidia-current modules" ;;
+        "")
+          w "could not LIST the live initrd ($(tail -1 "$initrd_err" 2>/dev/null | cut -c1-70)) — module check inconclusive, re-run" ;;
+        *)
+          f "live initrd has NO nvidia-current modules (initramfs built before 5025?)" ;;
+      esac
+      rm -f "$initrd_err"
+    else
+      w "lsinitramfs not available — initrd nvidia-module check skipped"
+    fi
   fi
 }
 

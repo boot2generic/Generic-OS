@@ -39,7 +39,9 @@ jobs:
             iso/config/hooks/normal/0700-enable-services.hook.chroot \
             iso/config/hooks/normal/0800-live-autologin.hook.chroot \
             iso/config/hooks/normal/0850-branding.hook.chroot \
+            iso/config/hooks/normal/0860-offline-installer.hook.chroot \
             iso/config/hooks/normal/0900-stop-build-daemons.hook.chroot \
+            iso/config/hooks/normal/5025-nvidia-glx.hook.chroot \
             iso/config/hooks/normal/9999-cleanup.hook.chroot
       - name: python syntax
         run: python3 -m py_compile iso/validate-boot.py

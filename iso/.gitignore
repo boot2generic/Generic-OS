@@ -53,8 +53,10 @@
 !/config/hooks/normal/0600-nvidia-bake.hook.chroot
 !/config/hooks/normal/0800-live-autologin.hook.chroot
 !/config/hooks/normal/0850-branding.hook.chroot
+!/config/hooks/normal/0860-offline-installer.hook.chroot
 !/config/hooks/normal/0700-enable-services.hook.chroot
 !/config/hooks/normal/0900-stop-build-daemons.hook.chroot
+!/config/hooks/normal/5025-nvidia-glx.hook.chroot
 !/config/hooks/normal/9999-cleanup.hook.chroot
 
 # package-lists/: our always-on lists only (25/30/40/50/live are staged/generated)

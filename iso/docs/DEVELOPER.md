@@ -47,7 +47,9 @@ existing provisioner instead of reimplementing it:
 | System files (`/etc`, `/usr/local`) | `build.sh` rsyncs `config/system/` into `includes.chroot`. |
 | Kali tools (security edition) | `0400-kali-tools` installs `extras/kali/kali-tools.list` from the pinned repo when `KALI_TOOLS=1`. |
 | Gaming extras not in stable | `0450-gaming-extras` installs gamescope from backports (`-t <suite>-backports`) and protontricks via pipx (global, `/opt/pipx`). No flatpak. |
-| NVIDIA cmdline/initramfs/PM | `0600-nvidia-bake` writes static config; Calamares regenerates grub+initramfs on the target. |
+| NVIDIA cmdline/initramfs/PM | `0600-nvidia-bake` writes static config (real `nvidia-current*` module names — bare `nvidia` only resolves via an alias conf that doesn't exist until 5025); Calamares regenerates grub+initramfs on the target. |
+| NVIDIA glx alternative | `5025-nvidia-glx` re-points glx→nvidia AFTER live-build's stock `5020` hook (which resets it to mesa, stripping the nouveau blacklist / modprobe alias / modules-load / Xorg slave links), then rebuilds the initramfs and hard-verifies the modules embedded. |
+| Offline installer | `0860-offline-installer` replaces `calamares-bootloader-config` (upstream apt-installs grub in the target — offline installs otherwise ABORT at the bootloader step) and widens `calamares-sources-final` components to contrib/non-free so baked nvidia/steam packages get updates. |
 | Services | `0700-enable-services` `systemctl enable` (never `start` — no systemd in chroot). |
 | Identity/cleanup | `9999-cleanup` clears machine-id, ssh host keys, apt cache. |
 
@@ -108,11 +110,15 @@ Note: this does NOT change package availability — same trixie repos as an on-h
 
 ## Gotchas
 - Build on a host matching `DEBIAN_SUITE` (or use `container-build.sh`, which pins it).
-- **The squashfs must contain grub** (`grub-efi-amd64-signed`, `grub-pc-bin`, `grub2-common`,
-  `shim-signed`, `efibootmgr` in `00-base`). The *live ISO* boots via live-build's own loader,
-  but **Calamares installs the target's bootloader from packages in the squashfs** — without
-  them the installed disk is unbootable (and `/etc/default/grub`, the NVIDIA-cmdline target,
-  won't exist). `validate-iso.sh` checks this.
+- **The squashfs must contain grub** (`grub-efi`, `grub-efi-amd64`, `grub-efi-amd64-signed`,
+  `grub-pc-bin`, `grub2-common`, `shim-signed`, `efibootmgr`, `keyutils` in `00-base`). The
+  *live ISO* boots via live-build's own loader, but **Calamares installs the target's
+  bootloader from packages in the squashfs** — without them the installed disk is unbootable
+  (and `/etc/default/grub`, the NVIDIA-cmdline target, won't exist). `grub-efi`/`grub-efi-amd64`
+  specifically make the bootloader helper's `apt-get install grub-efi` a no-op so OFFLINE
+  installs don't abort (`grub-pc` conflicts with `grub-efi-amd64` and stays unbaked; the
+  0860-patched helper covers BIOS installs via the baked `grub-pc-bin`). `validate-iso.sh`
+  checks all of this.
 - **Validate package availability with `./check-packages.sh` before building** — it
   checks every list package has a real install *Candidate* (`apt-cache show` is NOT
   enough; it succeeds for uninstallable packages and will let a build fail late).
@@ -124,9 +130,12 @@ Note: this does NOT change package availability — same trixie repos as an on-h
 - Declare apt packages in package-lists; hook-installed packages are `apt-mark manual`'d
   to dodge live-build pruning ([Bug#1062641](https://bugs.debian.org/1062641)).
 - Never `systemctl start` in a hook. grub/initramfs regen happens on the target via Calamares.
-- **Secure Boot + nvidia variant:** DKMS modules are unsigned → won't load with Secure Boot
-  on. Either disable Secure Boot, or add MOK signing (generate key at build, sign modules,
-  enroll on first boot). Mesa/AMD/Intel are unaffected.
+- **Secure Boot + nvidia variant:** DKMS signs the modules with an auto-generated MOK
+  (`/var/lib/dkms/mok.{key,pub}`, generated at build — note the same private key ships in
+  every install of that build), but no firmware trusts it → modules won't load with Secure
+  Boot on. Either disable Secure Boot, or enroll post-install: `mokutil --import
+  /var/lib/dkms/mok.pub` + reboot into the MOK manager (`mokutil` is in `00-base`).
+  Mesa/AMD/Intel are unaffected.
 - Calamares offline flow comes from `calamares-settings-debian`; to rebrand, ship an
   `includes.installer/etc/calamares/` with a complete `settings.conf` + `branding/`.
 - **Kali during build:** the build host has internet, so the pinned Kali repo + curated
