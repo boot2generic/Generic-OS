@@ -7,14 +7,32 @@ calamares-settings-debian
 # Bootloader + installer support — REQUIRED in the squashfs so Calamares can
 # install a BOOTABLE system on the target (BIOS + UEFI/Secure Boot) and format
 # the ESP / offer LUKS+LVM. Without these the installed disk won't boot.
+#
+# grub-efi + grub-efi-amd64: calamares-bootloader-config runs `apt-get install
+# grub-efi` in the OFFLINE target — if not already installed the whole install
+# FAILS at the bootloader step (verified in the boot harness). Baking them
+# makes that a no-op and keeps the ESP binary updated by future grub security
+# updates (grub-efi-amd64's postinst re-runs grub-install; -signed/-bin alone
+# never refresh the installed bootloader). NOTE: grub-pc (BIOS config pkg)
+# CONFLICTS with grub-efi-amd64 and stays unbaked — BIOS installs are handled
+# by the patched helper (0860) using the baked grub-pc-bin images instead.
+grub-efi
+grub-efi-amd64
 grub-efi-amd64-signed
 grub-pc-bin
 grub2-common
 shim-signed
+# mokutil: only path to Secure Boot + the NVIDIA DKMS modules — enroll the
+# build-generated MOK (/var/lib/dkms/mok.pub) so signed modules load with SB
+# on. Without it the nvidia variant requires Secure Boot disabled.
+mokutil
 efibootmgr
 dosfstools
 cryptsetup
 cryptsetup-initramfs
+# keyutils: calamares-bootloader-config apt-installs it for LUKS targets —
+# bake it so encrypted installs work offline too.
+keyutils
 lvm2
 os-prober
 linux-image-amd64
@@ -28,6 +46,9 @@ amd64-microcode
 locales
 sudo
 procps
+# hwclock: Calamares' hwclock job runs it in the target ("chroot: failed to
+# run command 'hwclock'" without it — non-fatal but the RTC never gets set).
+util-linux-extra
 e2fsprogs
 qemu-guest-agent
 network-manager

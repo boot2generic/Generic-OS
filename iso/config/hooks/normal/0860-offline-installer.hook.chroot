@@ -1,0 +1,89 @@
+#!/bin/sh
+# Make Calamares' bootloader step work with ZERO network — the core promise
+# of these ISOs. calamares-settings-debian's helper unconditionally runs
+# `apt-get install grub-efi` (UEFI) / `grub-pc` (BIOS) / cryptsetup+keyutils
+# (LUKS) inside the target chroot, and its final `update-grub` assumes the
+# apt postinst created /boot/grub. Offline, apt fails and the WHOLE INSTALL
+# aborts at the bootloader step (verified: QEMU UEFI install, -nic off).
+#
+# Replace the helper with an offline-safe equivalent: skip apt when the
+# needed packages are already baked (they are — see 00-base.list.chroot),
+# create /boot/grub before update-grub, and keep apt only as a last-resort
+# fallback for setups the image doesn't cover (e.g. BIOS grub-pc bookkeeping).
+set -e
+
+HELPER=/usr/share/calamares/helpers/calamares-bootloader-config
+[ -f "$HELPER" ] || { echo "0860: $HELPER not found (calamares-settings-debian changed?) — skipping"; exit 0; }
+
+cat > "$HELPER" <<'EOF'
+#!/bin/bash
+# Generic-OS offline-safe bootloader-config (replaces calamares-settings-debian's
+# helper; see hook 0860-offline-installer.hook.chroot). Original behavior kept,
+# but apt-get is only attempted when a required package is genuinely missing —
+# the image bakes grub-efi/grub-efi-amd64/grub-pc-bin/cryptsetup/keyutils, so
+# installs complete with no network.
+
+# tail -n1: a failed earlier run can leave a stale calamares-root proc mount;
+# the CURRENT install's mount is the most recent one (upstream takes them all,
+# producing a multiline CHROOT that breaks every chroot call below).
+CHROOT=$(mount | grep proc | grep calamares | awk '{print $3}' | sed -e "s#/proc##g" | tail -n1)
+# Empty CHROOT would make every path below operate on the LIVE system ("/"),
+# writing grub config into the running session instead of the target. Upstream
+# has the same latent hole; fail loudly instead.
+[ -n "$CHROOT" ] && [ -d "$CHROOT" ] || { echo "bootloader-config: no calamares target chroot found"; exit 1; }
+
+in_target() { chroot "$CHROOT" "$@"; }
+has_pkg() { in_target dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'ok installed'; }
+
+# LUKS: secure initramfs permissions + utilities (baked; apt = fallback only).
+if [ "$(mount | grep $CHROOT" " | cut -c -16)" = "/dev/mapper/luks" ]; then
+    echo "UMASK=0077" > $CHROOT/etc/initramfs-tools/conf.d/initramfs-permissions
+    for p in cryptsetup-initramfs cryptsetup keyutils; do
+        has_pkg "$p" || DEBIAN_FRONTEND=noninteractive in_target apt-get -y install "$p" \
+            || echo " ! $p missing and not installable offline — LUKS boot may need it"
+    done
+fi
+
+echo "Running bootloader-config (offline-safe)..."
+
+if [ -d /sys/firmware/efi/efivars ]; then
+    echo " * grub-efi (uefi)..."
+    if ! has_pkg grub-efi-amd64 && ! has_pkg grub-efi-amd64-bin; then
+        DEBIAN_FRONTEND=noninteractive in_target apt-get -y install grub-efi || exit 1
+    fi
+else
+    echo " * grub (bios)..."
+    # grub-pc conflicts with the baked grub-efi-amd64, so it is intentionally
+    # not preinstalled; grub-pc-bin provides the i386-pc images grub-install
+    # needs. Try apt only if even those are absent. Accepted tradeoff: BIOS
+    # installs keep grub-efi-amd64 configured and never get grub-pc, so grub
+    # security updates won't auto-refresh the MBR image (rerun grub-install
+    # manually after grub upgrades on BIOS machines).
+    if ! has_pkg grub-pc && ! has_pkg grub-pc-bin; then
+        DEBIAN_FRONTEND=noninteractive in_target apt-get -y install grub-pc || exit 1
+    fi
+fi
+
+# Re-enable os-prober:
+sed -i "s/#GRUB_DISABLE_OS_PROBER=false/# OS_PROBER re-enabled by Debian Calamares installation:\nGRUB_DISABLE_OS_PROBER=false/g" $CHROOT/etc/default/grub
+
+# Upstream relies on the grub postinst to create /boot/grub; when the package
+# was pre-baked (offline path) it does not exist yet and update-grub dies with
+# "cannot create /boot/grub/grub.cfg.new: Directory nonexistent".
+mkdir -p $CHROOT/boot/grub
+in_target /usr/sbin/update-grub
+EOF
+chmod 755 "$HELPER"
+echo "0860: offline-safe calamares-bootloader-config installed"
+
+# calamares-sources-final hardcodes "main non-free-firmware" when it writes
+# the installed system's /etc/apt/sources.list — but this image ships contrib
+# (steam) and non-free (nvidia-driver) packages, which would then NEVER see
+# updates. Widen the components to match the ISO's archive areas.
+SRCFINAL=/usr/share/calamares/helpers/calamares-sources-final
+if [ -f "$SRCFINAL" ]; then
+  sed -i 's/ main non-free-firmware$/ main contrib non-free non-free-firmware/' "$SRCFINAL"
+  grep -q 'main contrib non-free non-free-firmware' "$SRCFINAL" \
+    && echo "0860: sources-final components widened (contrib + non-free)" \
+    || echo "WARN: 0860 could not widen sources-final components (helper format changed?)"
+fi
