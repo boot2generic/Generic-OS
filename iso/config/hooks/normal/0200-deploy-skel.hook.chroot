@@ -41,6 +41,60 @@ if [ ! -s /etc/skel/.config/wallpaper/wallpaper.png ]; then
   ' || true
 fi
 
+# Deploy ran with HOME=/etc/skel, so @HOME@-templated .desktop Exec lines bake
+# the LITERAL path /etc/skel/… — after install, every user's autostart then
+# executes/reads the skel copies, so edits to their own ~/.config silently do
+# nothing (conky config, theme script). .desktop Exec can't expand $HOME, so
+# wrap the command in sh -c and let the shell resolve the path per-user.
+#
+# Use '~/', NOT '$HOME/': systemd-xdg-autostart-generator turns $ into \$ in
+# the generated unit, this systemd logs "Ignoring unknown escape sequences"
+# and hands sh the literal backslashed string — every wrapped autostart then
+# exits 127 at login (verified live: conky/theme dead, journal shows
+# 'sh: 1: $HOME/...: not found'). '~' has no escape trouble and dash expands
+# a word-leading tilde inside sh -c (verified through daemon-reload + unit
+# restart on the same session).
+#
+# Only wrap the OFFENDING Exec lines (a file can carry extra [Desktop Action]
+# Execs with %u/%f field codes — wrapped in quotes those stop expanding), and
+# never wrap a line that already contains a quote or a % field code: sh -c
+# quoting would mangle it. Such a line is a template bug — surface it instead.
+for d in /etc/skel/.config/autostart/*.desktop \
+         /etc/skel/.local/share/applications/*.desktop; do
+  [ -f "$d" ] || continue
+  grep -q '^Exec=.*/etc/skel/' "$d" || continue
+  if grep '^Exec=.*/etc/skel/' "$d" | grep -q "[%']"; then
+    echo "WARN: 0200: $d has an /etc/skel Exec with quote/field-code — left as-is (fix the template)"
+    continue
+  fi
+  sed -i -E "\|^Exec=.*/etc/skel/|s|^Exec=(.*)\$|Exec=sh -c '\\1'|" "$d"
+  sed -i -E "/^Exec=sh -c /s|/etc/skel/|~/|g" "$d"
+  echo "0200: per-user ~/ Exec in $(basename "$d")"
+done
+
+# Same HOME=/etc/skel leakage inside config FILES (kscreenlockerrc wallpaper
+# path, VSCodium extensions.json locations, …). Those are plain configs that
+# need a real absolute path per user, so bake a one-shot first-login fixup
+# that rewrites them in the user's own home and removes itself.
+cat > /etc/skel/.local/bin/fix-home-paths.sh <<'EOF'
+#!/bin/sh
+# One-shot (autostarted at first login): replace build-time /etc/skel paths
+# with this user's real home in configs copied from skel, then self-remove.
+for f in "$HOME/.config/kscreenlockerrc" \
+         "$HOME/.vscode-oss/extensions/extensions.json"; do
+  [ -f "$f" ] && sed -i "s|/etc/skel|$HOME|g" "$f" 2>/dev/null
+done
+rm -f "$HOME/.config/autostart/00-fix-home-paths.desktop" "$HOME/.local/bin/fix-home-paths.sh"
+EOF
+chmod 755 /etc/skel/.local/bin/fix-home-paths.sh
+cat > /etc/skel/.config/autostart/00-fix-home-paths.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=First-login home path fixup
+Exec=sh -c '~/.local/bin/fix-home-paths.sh'
+OnlyShowIn=KDE;
+EOF
+
 missing=0
 for f in /etc/skel/.zshrc \
          /etc/skel/.config/kdeglobals \
@@ -64,12 +118,29 @@ if grep -q '^DSHELL=' /etc/adduser.conf 2>/dev/null; then
 else
   printf 'DSHELL=/usr/bin/zsh\n' >> /etc/adduser.conf
 fi
+# Calamares 3.3 reads the shell from the NESTED `user: { shell: … }` key —
+# a top-level `userShell:` is silently ignored (verified against the 3.3.14
+# users/Config.cpp: `userSettings.contains("shell")`; an install with only
+# userShell: produced a /bin/bash user). Write the nested key; keep the
+# legacy top-level one too for older Calamares.
 find /etc/calamares /usr/share/calamares -name users.conf 2>/dev/null \
 | while read -r f; do
+    # Full-file rewrite (not sed ranges — those terminate on column-0 comment
+    # lines, which upstream users.conf uses inside blocks, and can miss or
+    # duplicate the key): insert shell right under user:, dropping any old
+    # shell: inside that block; append the block if absent. Line-based output
+    # also guarantees a trailing newline before the userShell append below.
+    awk '
+      /^user:[[:space:]]*$/ && !done { print; print "    shell: /usr/bin/zsh"; done=1; inblock=1; next }
+      inblock && /^[[:space:]]+shell:[[:space:]]/ { next }
+      /^[^[:space:]#]/ { inblock=0 }
+      { print }
+      END { if (!done) { print ""; print "user:"; print "    shell: /usr/bin/zsh" } }
+    ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
     if grep -q '^userShell:' "$f"; then
       sed -i 's#^userShell:.*#userShell: /usr/bin/zsh#' "$f"
     else
-      printf '\nuserShell: /usr/bin/zsh\n' >> "$f"
+      printf 'userShell: /usr/bin/zsh\n' >> "$f"
     fi
-    echo "0200: userShell=/usr/bin/zsh set in $f"
+    echo "0200: user shell=/usr/bin/zsh set in $f"
   done

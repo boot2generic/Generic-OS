@@ -29,11 +29,37 @@ done
 # Hidden=true override above alone does nothing (kept as belt-and-braces for
 # layouts that do use xdg autostart). Disable the module for accounts created
 # from skel. Append rather than clobber in case a deploy ever ships kded6rc.
+# The plugin's id is the LIBRARY BASENAME "kded_plasma-welcome" (the kded_
+# prefix is not stripped — kded6 even logs it as an invalid module name), so
+# the config group kded6 honours is [Module-kded_plasma-welcome]. Keep both
+# spellings in case a later plasma-welcome fixes its plugin id.
 f=/etc/skel/.config/kded6rc
-if ! grep -q '^\[Module-plasma-welcome\]' "$f" 2>/dev/null; then
-  printf '\n[Module-plasma-welcome]\nautoload=false\n' >> "$f"
-  echo "branding: plasma-welcome kded module disabled via skel kded6rc"
+for sect in plasma-welcome kded_plasma-welcome; do
+  if ! grep -q "^\[Module-${sect}\]" "$f" 2>/dev/null; then
+    printf '\n[Module-%s]\nautoload=false\n' "$sect" >> "$f"
+    echo "branding: kded6rc [Module-$sect] autoload=false"
+  fi
+done
+
+# The suppression that actually decides at SESSION START (verified on an
+# installed system: the module gets loaded regardless of autoload=false):
+# the kded module compares [General]LastSeenVersion in plasma-welcomerc
+# against the running Plasma version (QVersionNumber) and launches the
+# Welcome app when it's older, then stores the current version. Bake a
+# far-future version so the launch check never fires, for the live user and
+# every user Calamares creates from skel.
+mkdir -p /etc/skel/.config
+f=/etc/skel/.config/plasma-welcomerc
+if grep -q '^LastSeenVersion=' "$f" 2>/dev/null; then
+  # a deploy shipped its own — force the far-future value, else a low version
+  # silently reactivates the Welcome Center
+  sed -i 's/^LastSeenVersion=.*/LastSeenVersion=999.999.999/' "$f"
+else
+  # append works for both a missing file and one without the key (KConfig
+  # merges duplicate [General] groups)
+  printf '[General]\nLastSeenVersion=999.999.999\n' >> "$f"
 fi
+echo "branding: plasma-welcomerc LastSeenVersion=999.999.999 (Welcome Center suppressed)"
 
 # --- 2. Calamares: "Install Debian" launcher → "Install Generic OS" ---------
 # The live desktop icon and menu entry come from calamares-settings-debian's
@@ -46,11 +72,18 @@ grep -rlE '^Name=Install Debian' /usr/share/applications /etc/skel 2>/dev/null \
   done
 
 # --- 2b. Calamares branding.desc product names -------------------------------
+# versionedName/shortVersionedName feed the welcome-page heading — without
+# rewriting them the installer's first screen still says "… for Debian 13".
+# welcomeStyleCalamares:false makes the heading use the product name instead
+# of literally saying "Calamares".
 find /etc/calamares /usr/share/calamares -name branding.desc 2>/dev/null \
 | while read -r f; do
     sed -i -E \
       -e 's/^([[:space:]]*productName:[[:space:]]*).*/\1Generic OS/' \
       -e 's/^([[:space:]]*shortProductName:[[:space:]]*).*/\1Generic OS/' \
+      -e 's/^([[:space:]]*versionedName:[[:space:]]*).*/\1Generic OS/' \
+      -e 's/^([[:space:]]*shortVersionedName:[[:space:]]*).*/\1Generic OS/' \
+      -e 's/^([[:space:]]*welcomeStyleCalamares:[[:space:]]*).*/\1false/' \
       "$f"
     echo "branding: product names set in $f"
   done
