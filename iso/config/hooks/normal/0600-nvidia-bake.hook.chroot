@@ -19,13 +19,23 @@ if ! grep -q 'nvidia-drm.modeset=1' "$grub" 2>/dev/null; then
   fi
 fi
 
+# Debian's DKMS package builds the modules as nvidia-current*. The bare names
+# (nvidia, nvidia_modeset, …) only resolve through the modprobe alias conf
+# (/etc/modprobe.d/nvidia.conf) — a glx-alternative slave link that is absent
+# until the 5025 hook re-points glx at nvidia (live-build's stock 5020 resets
+# it to mesa). initramfs-tools SILENTLY skips unresolvable names, so listing
+# bare names here shipped initrds without the driver. Use the real names.
 mods=/etc/initramfs-tools/modules
-for m in nvidia nvidia_modeset nvidia_uvm nvidia_drm; do
+for m in nvidia-current nvidia-current-modeset nvidia-current-uvm nvidia-current-drm; do
   grep -qE "^[[:space:]]*${m}([[:space:]]|$)" "$mods" 2>/dev/null || echo "$m" >> "$mods"
 done
-update-initramfs -u || true   # builds the live initramfs; target rebuilt by Calamares
+# No update-initramfs here: 5025 (which runs after the stock 5020 glx reset)
+# builds the final initramfs and hard-verifies the modules embedded.
 
-printf 'options nvidia NVreg_PreserveVideoMemoryAllocations=1\n' \
+# Both names: "nvidia" applies when loaded via the alias/install chain
+# (modprobe nvidia), "nvidia-current" when loaded directly by real name
+# (the initramfs embed above) — modprobe options only match the load name.
+printf 'options nvidia NVreg_PreserveVideoMemoryAllocations=1\noptions nvidia-current NVreg_PreserveVideoMemoryAllocations=1\n' \
   > /etc/modprobe.d/nvidia-power-management.conf
 
 systemctl enable nvidia-persistenced 2>/dev/null || true

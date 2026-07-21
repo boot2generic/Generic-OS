@@ -1,0 +1,42 @@
+#!/bin/sh
+# NVIDIA variant only. MUST run after live-build's stock 5020 hook: that hook
+# force-sets the glx alternative to mesa-diverted ("Use mesa renderer by
+# default"), which strips the NVIDIA wiring the driver packages configure via
+# the glx alternative's slave links:
+#   /etc/modprobe.d/nvidia-blacklists-nouveau.conf   (nouveau blacklist)
+#   /etc/modprobe.d/nvidia.conf                      (alias nvidia -> nvidia-current)
+#   /etc/modules-load.d/nvidia.conf                  (load nvidia-drm at boot)
+#   /usr/share/X11/xorg.conf.d/nvidia-drm-outputclass.conf
+# Without these, an installed system races nouveau (in the initrd, not
+# blacklisted) against the proprietary driver and GL routes to Mesa — on an
+# NVIDIA-only desktop that means nouveau/llvmpipe instead of the real driver.
+#
+# Re-point glx at the NVIDIA stack, then rebuild the initramfs: the modprobe
+# alias conf is also what lets initramfs-tools resolve the nvidia-current
+# modules listed by 0600 (an initramfs built before this hook lacks them).
+set -e
+dpkg -s nvidia-driver >/dev/null 2>&1 || { echo "no nvidia-driver; skip"; exit 0; }
+# nvidia-driver installed but no glx alternative = the alternatives layout
+# changed under us. A soft skip here would ship the driver-dormant image this
+# hook exists to prevent — fail the build instead.
+[ -e /etc/alternatives/glx ] || { echo "FATAL: nvidia-driver present but no glx alternative — glx-alternative-* layout changed?"; exit 1; }
+
+update-alternatives --quiet --set glx /usr/lib/nvidia
+ldconfig
+
+# Sanity: the slave links must exist now, else fail the build loudly rather
+# than ship another ISO with the driver dormant.
+for f in /etc/modprobe.d/nvidia-blacklists-nouveau.conf /etc/modprobe.d/nvidia.conf; do
+  [ -e "$f" ] || { echo "FATAL: $f missing after glx switch"; exit 1; }
+done
+
+update-initramfs -u
+
+# Verify the initramfs actually embeds the driver (regression guard for the
+# name-resolution failure that shipped initrds with nouveau only).
+initrd=$(ls -1t /boot/initrd.img-* | head -1)
+if lsinitramfs "$initrd" | grep -q 'nvidia-current.*\.ko'; then
+  echo "5025: nvidia-current modules embedded in $initrd"
+else
+  echo "FATAL: $initrd contains no nvidia-current modules"; exit 1
+fi
