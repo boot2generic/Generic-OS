@@ -192,6 +192,15 @@ content(){  # $1=iso $2=edition $3=variant
       && p "nvidia modprobe alias conf present" \
       || f "/etc/modprobe.d/nvidia.conf missing (modprobe nvidia won't resolve)"
     chk_grep "$sq" etc/initramfs-tools/modules 'nvidia-current'
+    # KMS modeset must be forced on the DRM module directly (0600): the GRUB
+    # cmdline flag is keyed to module "nvidia-drm" but Debian's DKMS loads it
+    # as "nvidia-current-drm", so the flag doesn't apply and the installed
+    # system boots modeset=N → Plasma Wayland won't start (X11-only).
+    if grep -q 'modeset=1' "$sq/etc/modprobe.d/nvidia-modeset.conf" 2>/dev/null; then
+      p "nvidia KMS modeset forced via modprobe.d (Wayland works)"
+    else
+      f "/etc/modprobe.d/nvidia-modeset.conf missing modeset=1 (0600) — installed Wayland will fail, X11-only"
+    fi
     # The live initrd must EMBED the driver (bare names silently resolve to
     # nothing; nouveau then owns the GPU from early boot).
     #

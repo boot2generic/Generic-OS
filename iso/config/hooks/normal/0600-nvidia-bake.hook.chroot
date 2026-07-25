@@ -38,6 +38,22 @@ done
 printf 'options nvidia NVreg_PreserveVideoMemoryAllocations=1\noptions nvidia-current NVreg_PreserveVideoMemoryAllocations=1\n' \
   > /etc/modprobe.d/nvidia-power-management.conf
 
+# KMS modeset — REQUIRED for a Plasma WAYLAND session (without it KWin-Wayland
+# refuses to start and the session bounces straight back to SDDM; only X11
+# works). We set `nvidia-drm.modeset=1` on the GRUB cmdline above, but that
+# flag is keyed to a module literally named `nvidia-drm`, while Debian's DKMS
+# package loads the drm module under the name `nvidia-current-drm` (see the
+# initramfs list above) — so the cmdline flag SILENTLY doesn't apply and the
+# installed system boots with modeset=N. Verified on real hardware (RTX 3080
+# Ti): cmdline had nvidia-drm.modeset=1 yet
+# /sys/module/nvidia_drm/parameters/modeset was N and Wayland kept crashing.
+# Set the option directly on the module by its load name (and the internal
+# name, harmlessly, for robustness). initramfs-tools bakes /etc/modprobe.d
+# into the initrd, and 5025's update-initramfs picks this up; Calamares
+# regenerates the target initrd from the same file at install time.
+printf 'options nvidia-current-drm modeset=1 fbdev=1\noptions nvidia_drm modeset=1 fbdev=1\n' \
+  > /etc/modprobe.d/nvidia-modeset.conf
+
 systemctl enable nvidia-persistenced 2>/dev/null || true
 for u in nvidia-suspend nvidia-resume nvidia-hibernate; do
   systemctl enable "$u.service" 2>/dev/null || true
