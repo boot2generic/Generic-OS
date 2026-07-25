@@ -93,6 +93,17 @@ content(){  # $1=iso $2=edition $3=variant
   else
     f "calamares-sources-final still writes 'main non-free-firmware' only (nvidia/steam updates unavailable post-install)"
   fi
+  # DNS + time: the dotfiles configure systemd-resolved (DoT) + expect NTP.
+  # trixie split these out of systemd, so they must be listed as packages, and
+  # /etc/resolv.conf must point at the resolved stub — else DNS is dead and a
+  # wrong clock makes apt reject Debian signatures. (0700)
+  chk_pkg "$sq" systemd-resolved "systemd-resolved (dotfiles DNS config target)"
+  chk_pkg "$sq" systemd-timesyncd "systemd-timesyncd (NTP → correct clock → apt sigs verify)"
+  chk_grep "$sq" etc/tmpfiles.d/00-resolv-conf-stub.conf 'stub-resolv.conf'
+  # backports must NOT be shipped as a separate .sources on the installed image:
+  # Calamares' sources-final already adds trixie-backports to sources.list, so a
+  # baked backports.sources makes apt warn "configured multiple times" (9999).
+  chk_absent "$sq" etc/apt/sources.list.d/backports.sources
   chk_file "$sq" etc/default/grub
   chk_file "$sq" etc/skel/.zshrc
   # Login shell actually zsh for created accounts (adduser = live user path).

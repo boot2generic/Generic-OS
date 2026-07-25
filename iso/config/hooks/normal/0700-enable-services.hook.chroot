@@ -7,6 +7,23 @@ set -e
 en() { systemctl enable "$1" 2>/dev/null || echo "WARN: could not enable $1 (unit present?)"; }
 en sddm
 en NetworkManager
+# DNS: the dotfiles set NetworkManager dns=systemd-resolved and ship a
+# DNS-over-TLS resolved.conf drop-in — resolved must be running for that to
+# resolve anything.
+en systemd-resolved
+# Time: no NTP client = wrong clock on first boot, and apt then rejects every
+# Debian repo signature. timesyncd corrects the clock once the network is up.
+en systemd-timesyncd
+# Point /etc/resolv.conf at the resolved stub so apps actually use resolved's
+# 127.0.0.53 (NetworkManager with dns=systemd-resolved does NOT write
+# resolv.conf itself). Done as a tmpfiles rule, NOT a build-time symlink:
+# live-build owns /etc/resolv.conf during the build (a symlink here would
+# break build-time apt, and live-build restores its own file at the end
+# anyway). `L+` recreates the symlink at every boot regardless of what the
+# squashfs shipped; harmless if it dangles until resolved starts.
+mkdir -p /etc/tmpfiles.d
+printf 'L+ /etc/resolv.conf - - - - ../run/systemd/resolve/stub-resolv.conf\n' \
+  > /etc/tmpfiles.d/00-resolv-conf-stub.conf
 # Power management: harmless to enable; tlp only acts on battery hardware.
 en tlp
 en thermald

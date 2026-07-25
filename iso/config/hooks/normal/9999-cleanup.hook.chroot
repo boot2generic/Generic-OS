@@ -18,6 +18,12 @@ find /opt/dotfiles -type f -name '*.pyc' -delete 2>/dev/null || true
 rm -f /etc/sudoers.d/lbbuild /etc/dotfiles-iso.env /etc/dotfiles-kali-tools.list
 rm -f /etc/apt/apt.conf.d/90dotfiles-build      # build-only non-interactive dpkg policy
 rm -f /etc/dpkg/dpkg.cfg.d/force-unsafe-io      # build-only fsync-skip speedup
+# backports.sources is BUILD-ONLY: the 0450 hook uses it to pull gamescope,
+# but on the installed system Calamares' sources-final already writes
+# trixie-backports into /etc/apt/sources.list — shipping this file too makes
+# apt warn "configured multiple times". Drop it (no-op on editions that never
+# staged it).
+rm -f /etc/apt/sources.list.d/backports.sources
 userdel lbbuild 2>/dev/null || true
 
 apt-get clean

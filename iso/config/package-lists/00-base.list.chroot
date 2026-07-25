@@ -52,6 +52,15 @@ util-linux-extra
 e2fsprogs
 qemu-guest-agent
 network-manager
+# DNS + time — the dotfiles ship config for BOTH (NetworkManager dns=systemd-
+# resolved + a DNS-over-TLS resolved.conf drop-in), but Debian trixie split
+# these out of the systemd package, so without listing them here they simply
+# aren't installed: NetworkManager then defers DNS to a resolver that doesn't
+# exist (name resolution dead), and with no NTP client the clock is wrong on
+# first boot → apt rejects every Debian repo signature ("verification failed").
+# 0700 enables both; 0700 also links /etc/resolv.conf to the resolved stub.
+systemd-resolved
+systemd-timesyncd
 tlp
 thermald
 powertop
